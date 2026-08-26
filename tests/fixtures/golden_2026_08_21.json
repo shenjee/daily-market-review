@@ -1,0 +1,76 @@
+{
+  "trade_date": "2026-08-21",
+  "atoms": {
+    "pullback_count": 0,
+    "median_change_pct": null,
+    "advancing_count": 2500,
+    "declining_count": 2300,
+    "margin_balance_sh": 950000000000.0,
+    "margin_balance_sz": 880000000000.0,
+    "margin_balance_bj": null,
+    "sh_index_close": 3200.5,
+    "sh_index_prev_close": 3180.25,
+    "sz_index_close": 10250.75,
+    "sz_index_prev_close": 10100.0,
+    "cy_index_close": 2105.4,
+    "cy_index_prev_close": 2080.0,
+    "turnover_amount_sh": 843216000000.0,
+    "turnover_amount_sz": 1123456000000.0,
+    "turnover_amount_cy": 345678000000.0,
+    "turnover_amount_bj": 51234000000.0,
+    "total_market_cap": 90000000000000.0,
+    "float_market_cap": 70000000000000.0,
+    "pe_sh": 17.0,
+    "pe_sz": 30.67,
+    "pe_cy": 45.12,
+    "pe_all": null,
+    "avg_stock_price": 18.56
+  },
+  "price_limit_events": [
+    {
+      "market": "sh",
+      "code": "600519",
+      "name": "贵州茅台",
+      "direction": "up",
+      "closed_at_limit": true,
+      "limit_rate_bp": 1000,
+      "streak_height": 4
+    },
+    {
+      "market": "sz",
+      "code": "300001",
+      "name": "示例科技",
+      "direction": "up",
+      "closed_at_limit": false,
+      "limit_rate_bp": 2000,
+      "streak_height": 0
+    },
+    {
+      "market": "sh",
+      "code": "600002",
+      "name": "示例实业",
+      "direction": "down",
+      "closed_at_limit": true,
+      "limit_rate_bp": 1000,
+      "streak_height": 0
+    },
+    {
+      "market": "bj",
+      "code": "830799",
+      "name": "艾融软件",
+      "direction": "up",
+      "closed_at_limit": true,
+      "limit_rate_bp": 3000,
+      "streak_height": 1
+    },
+    {
+      "market": "sh",
+      "code": "600519",
+      "name": "贵州茅台",
+      "direction": "down",
+      "closed_at_limit": false,
+      "limit_rate_bp": 1000,
+      "streak_height": 0
+    }
+  ]
+}
