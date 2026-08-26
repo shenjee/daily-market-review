@@ -25,10 +25,10 @@
 export MARKETREVIEW_HOME="$HOME/.marketreview"
 ```
 
-测试时可显式传入：
+测试时可显式传入数据库文件路径（`--db` 放在子命令之前）：
 
 ```bash
-python3 scripts/cli.py get --date 2026-08-21 --db /tmp/marketreview-test.sqlite3
+python3 scripts/cli.py --db /tmp/marketreview-test.sqlite3 get --date 2026-08-21
 ```
 
 ## CLI

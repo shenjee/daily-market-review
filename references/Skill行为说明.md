@@ -81,4 +81,4 @@
 
 ## 证券校验
 
-股票代码和市场基础校验使用 `assets/securities_master.json`。校验在 Skill 层完成，repository 只做结构性持久化。
+股票代码和市场基础校验使用 `assets/securities_master.json`；交易日校验使用 `assets/trading_calendar.json`。写入路径在 `scripts/cli.py` 中执行上述校验，repository 只做结构性持久化。

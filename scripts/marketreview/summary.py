@@ -31,13 +31,10 @@ def _limit_up_down_ratio(effective_up: int, closed_down: int) -> dict[str, Any] 
     if effective_up <= 0 and closed_down <= 0:
         return None
     if effective_up <= 0 or closed_down <= 0:
-        left = effective_up if effective_up >= closed_down else closed_down
-        right = 1
-        display = f"{left}:1" if effective_up >= closed_down else f"1:{left}"
         return {
             "effective_limit_up": effective_up,
             "closed_limit_down": closed_down,
-            "display": display,
+            "display": f"{effective_up}:{closed_down}",
         }
     if effective_up >= closed_down:
         ratio = round(effective_up / closed_down, 2)
@@ -52,11 +49,10 @@ def _limit_up_down_ratio(effective_up: int, closed_down: int) -> dict[str, Any] 
     }
 
 
-def _sum_present(values: Sequence[float | None]) -> float | None:
-    present = [value for value in values if value is not None]
-    if not present:
+def _sum_all_required(values: Sequence[float | None]) -> float | None:
+    if not values or any(value is None for value in values):
         return None
-    return float(sum(present))
+    return float(sum(values))
 
 
 def compute_summary(
@@ -104,14 +100,14 @@ def compute_summary(
     )
 
     review_payload = asdict(review) if review is not None else {}
-    margin_total = _sum_present(
+    margin_total = _sum_all_required(
         [
             review_payload.get("margin_balance_sh"),
             review_payload.get("margin_balance_sz"),
             review_payload.get("margin_balance_bj"),
         ]
     )
-    turnover_total = _sum_present(
+    turnover_total = _sum_all_required(
         [
             review_payload.get("turnover_amount_sh"),
             review_payload.get("turnover_amount_sz"),

@@ -8,6 +8,7 @@ import sys
 from dataclasses import asdict
 from typing import Any
 
+from marketreview.business_validation import default_write_guard
 from marketreview.errors import MarketReviewError
 from marketreview.paths import resolve_db_path
 from marketreview.repository import MarketReviewRepository
@@ -57,7 +58,8 @@ def cmd_get(args: argparse.Namespace) -> int:
 
 
 def cmd_save_review(args: argparse.Namespace) -> int:
-    trade_date = normalize_trade_date(args.date)
+    guard = default_write_guard()
+    trade_date = guard.validate_write_trade_date(args.date)
     payload = _read_json_input(args.input)
     fields = payload.get("fields", payload)
     if not isinstance(fields, dict):
@@ -70,7 +72,8 @@ def cmd_save_review(args: argparse.Namespace) -> int:
 
 
 def cmd_save_events(args: argparse.Namespace) -> int:
-    trade_date = normalize_trade_date(args.date)
+    guard = default_write_guard()
+    trade_date = guard.validate_write_trade_date(args.date)
     payload = _read_json_input(args.input)
     if isinstance(payload, dict) and "events" in payload:
         events = payload["events"]
@@ -79,6 +82,11 @@ def cmd_save_events(args: argparse.Namespace) -> int:
     if not isinstance(events, list):
         _failure("save-events 输入必须是事件数组或包含 events 的对象")
         return 1
+    for event in events:
+        if not isinstance(event, dict):
+            _failure("save-events 中每个事件必须是 JSON 对象")
+            return 1
+        guard.validate_price_limit_event(event)
     with MarketReviewRepository(args.db) as repo:
         repo.save_price_limit_events(trade_date, events)
     _success({"trade_date": trade_date, "saved_count": len(events)})
@@ -86,7 +94,9 @@ def cmd_save_events(args: argparse.Namespace) -> int:
 
 
 def cmd_delete_event(args: argparse.Namespace) -> int:
-    trade_date = normalize_trade_date(args.date)
+    guard = default_write_guard()
+    trade_date = guard.validate_write_trade_date(args.date)
+    guard.validate_event_identity(args.market, args.code, args.direction)
     with MarketReviewRepository(args.db) as repo:
         repo.delete_price_limit_event(trade_date, args.market, args.code, args.direction)
     _success(
@@ -101,12 +111,15 @@ def cmd_delete_event(args: argparse.Namespace) -> int:
 
 
 def cmd_replace_direction(args: argparse.Namespace) -> int:
-    trade_date = normalize_trade_date(args.date)
+    guard = default_write_guard()
+    trade_date = guard.validate_write_trade_date(args.date)
+    guard.validate_event_identity(args.market, args.code, args.old_direction)
     payload = _read_json_input(args.input)
     event = payload.get("event", payload)
     if not isinstance(event, dict):
         _failure("replace-direction 输入必须是事件对象或包含 event 的对象")
         return 1
+    guard.validate_price_limit_event(event)
     with MarketReviewRepository(args.db) as repo:
         repo.replace_price_limit_event_direction(
             trade_date,

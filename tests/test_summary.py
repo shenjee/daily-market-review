@@ -7,7 +7,7 @@ import unittest
 import _bootstrap  # noqa: F401
 
 from marketreview.schema import DailyMarketReviewAtoms, PriceLimitEventRecord
-from marketreview.summary import compute_summary
+from marketreview.summary import _limit_up_down_ratio, compute_summary
 
 
 class TestSummary(unittest.TestCase):
@@ -21,8 +21,10 @@ class TestSummary(unittest.TestCase):
             trade_date="2026-08-21",
             margin_balance_sh=100.0,
             margin_balance_sz=200.0,
+            margin_balance_bj=50.0,
             turnover_amount_sh=10.0,
             turnover_amount_sz=20.0,
+            turnover_amount_bj=5.0,
             sh_index_close=3200.0,
             sh_index_prev_close=3180.0,
         )
@@ -31,9 +33,35 @@ class TestSummary(unittest.TestCase):
         self.assertEqual(summary["limit_up_broken_count"], 1)
         self.assertEqual(summary["down_closed_count"], 1)
         self.assertEqual(summary["highest_board"], 4)
-        self.assertEqual(summary["margin_balance_total"], 300.0)
-        self.assertEqual(summary["turnover_amount_total"], 30.0)
+        self.assertEqual(summary["margin_balance_total"], 350.0)
+        self.assertEqual(summary["turnover_amount_total"], 35.0)
         self.assertEqual(summary["sh_index"]["change_points"], 20.0)
+
+    def test_totals_require_all_components(self) -> None:
+        review = DailyMarketReviewAtoms(
+            trade_date="2026-08-21",
+            margin_balance_sh=100.0,
+            margin_balance_sz=200.0,
+            turnover_amount_sh=10.0,
+            turnover_amount_sz=20.0,
+        )
+        summary = compute_summary(review, [])
+        self.assertIsNone(summary["margin_balance_total"])
+        self.assertIsNone(summary["turnover_amount_total"])
+
+    def test_limit_up_down_ratio_preserves_zero_side(self) -> None:
+        ratio = _limit_up_down_ratio(12, 0)
+        assert ratio is not None
+        self.assertEqual(ratio["display"], "12:0")
+
+        ratio = _limit_up_down_ratio(0, 12)
+        assert ratio is not None
+        self.assertEqual(ratio["display"], "0:12")
+
+    def test_limit_up_down_ratio_normalizes_both_positive(self) -> None:
+        ratio = _limit_up_down_ratio(58, 15)
+        assert ratio is not None
+        self.assertEqual(ratio["display"], "3.87:1")
 
 
 if __name__ == "__main__":

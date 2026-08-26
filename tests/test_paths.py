@@ -30,6 +30,11 @@ class TestPaths(unittest.TestCase):
             db = Path(tmp) / "custom.sqlite3"
             self.assertEqual(resolve_db_path(db), db.resolve())
 
+    def test_db_override_without_sqlite3_suffix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "review.db"
+            self.assertEqual(resolve_db_path(db), db.resolve())
+
 
 if __name__ == "__main__":
     unittest.main()

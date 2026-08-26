@@ -17,10 +17,7 @@ def default_market_review_db_path() -> Path:
 def resolve_db_path(db_path: str | Path | None = None) -> Path:
     """Resolve database path with priority: --db > MARKETREVIEW_HOME > ~/.marketreview."""
     if db_path is not None:
-        path = Path(db_path).expanduser()
-        if path.suffix == ".sqlite3":
-            return path.resolve()
-        return (path / DB_FILENAME).resolve()
+        return Path(db_path).expanduser().resolve()
 
     home_value = os.environ.get("MARKETREVIEW_HOME")
     if home_value:
