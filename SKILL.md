@@ -37,14 +37,14 @@ CLI --db
 > ~/.marketreview/market_review.sqlite3
 ```
 
-Skill 通过 JSON CLI 读写，不直接 import 包，也不直接操作 SQLite：
+Skill 通过 JSON CLI 读写，不直接 import 包，也不直接操作 SQLite。执行前先取得当前 `SKILL.md` 所在目录的绝对路径，并用它替换下列命令中的 `<skill-dir>`；不能假设当前工作目录就是 Skill 安装目录：
 
 ```bash
-python3 scripts/cli.py --db /tmp/marketreview-test.sqlite3 get --date 2026-08-21
-python3 scripts/cli.py save-review --date 2026-08-21 --input -
-python3 scripts/cli.py save-events --date 2026-08-21 --input -
-python3 scripts/cli.py delete-event --date 2026-08-21 --market sh --code 600519 --direction up
-python3 scripts/cli.py replace-direction --date 2026-08-21 --market sh --code 600519 --old-direction up --input -
+python3 "<skill-dir>/scripts/cli.py" get --date 2026-08-21
+python3 "<skill-dir>/scripts/cli.py" save-review --date 2026-08-21 --input -
+python3 "<skill-dir>/scripts/cli.py" save-events --date 2026-08-21 --input -
+python3 "<skill-dir>/scripts/cli.py" delete-event --date 2026-08-21 --market sh --code 600519 --direction up
+python3 "<skill-dir>/scripts/cli.py" replace-direction --date 2026-08-21 --market sh --code 600519 --old-direction up --input -
 ```
 
 CLI 输出统一为：
