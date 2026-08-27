@@ -10,13 +10,12 @@ from zoneinfo import ZoneInfo
 
 from .calendar import TradingCalendar
 from .errors import InvalidFieldValueError
-from .securities import SecuritiesLookup
 from .validation import normalize_trade_date
 
 VALID_MARKETS = frozenset({"sh", "sz", "bj"})
 VALID_DIRECTIONS = frozenset({"up", "down"})
 VALID_LIMIT_RATE_BP = frozenset({1000, 2000, 3000})
-_CODE_PATTERN = re.compile(r"^\d{6}$")
+_CODE_PATTERN = re.compile(r"^[0-9]{6}$")
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 MARKET_CLOSE_TIME = time(15, 0)
 
@@ -33,11 +32,9 @@ class WriteGuard:
     def __init__(
         self,
         calendar: TradingCalendar | None = None,
-        securities: SecuritiesLookup | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._calendar = calendar or TradingCalendar()
-        self._securities = securities or SecuritiesLookup()
         self._clock = clock or _default_clock
 
     def validate_write_trade_date(self, trade_date: str | Any) -> str:
@@ -65,7 +62,6 @@ class WriteGuard:
         self._validate_market(market)
         self._validate_code(code)
         self._validate_direction(direction)
-        self._securities.validate(market, code)
 
     def validate_price_limit_event(self, event: Mapping[str, Any]) -> None:
         market = event.get("market")

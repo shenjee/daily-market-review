@@ -68,6 +68,21 @@ class TestWriteGuard(unittest.TestCase):
                 }
             )
 
+    def test_rejects_fullwidth_digit_code(self) -> None:
+        with self.assertRaises(InvalidFieldValueError) as ctx:
+            self.guard.validate_price_limit_event(
+                {
+                    "market": "sz",
+                    "code": "１２３４５６",
+                    "name": "全角代码",
+                    "direction": "up",
+                    "closed_at_limit": True,
+                    "limit_rate_bp": 1000,
+                    "streak_height": 1,
+                }
+            )
+        self.assertIn("code", str(ctx.exception))
+
     def test_accepts_valid_event(self) -> None:
         self.guard.validate_price_limit_event(
             {

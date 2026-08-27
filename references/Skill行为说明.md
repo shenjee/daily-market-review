@@ -83,4 +83,4 @@
 
 ## 证券校验
 
-股票代码和市场基础校验使用 `assets/securities_master.json`；交易日校验使用 `assets/trading_calendar.json`。写入路径在 `scripts/cli.py` 中执行上述校验，repository 只做结构性持久化。
+写入时只校验市场、代码格式、方向、涨跌幅限制和连板高度：`market` 为小写 `sh | sz | bj`，`code` 为 6 位 ASCII 数字，`direction` 为 `up | down`，`limit_rate_bp` 为 `1000 | 2000 | 3000`，`streak_height` 为非负整数。不维护证券主表，不因代码是否「认识」拒绝写入。交易日校验使用 `assets/trading_calendar.json`。写入路径在 `scripts/cli.py` 中执行上述校验，repository 只做结构性持久化。
