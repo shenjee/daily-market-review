@@ -5,11 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import asdict
 from typing import Any
 
 from marketreview.business_validation import default_write_guard
 from marketreview.errors import MarketReviewError
+from marketreview.ladder import build_ladder, ladder_to_dict
 from marketreview.paths import resolve_db_path
 from marketreview.repository import MarketReviewRepository
 from marketreview.service import missing_atomic_fields
@@ -45,6 +45,7 @@ def cmd_get(args: argparse.Namespace) -> int:
     with MarketReviewRepository(args.db) as repo:
         review = repo.get_review(trade_date)
         events = repo.get_price_limit_events(trade_date)
+        details = repo.get_price_limit_event_details(trade_date)
         _success(
             {
                 "trade_date": trade_date,
@@ -52,6 +53,7 @@ def cmd_get(args: argparse.Namespace) -> int:
                 "events": events_to_dict(events),
                 "summary": compute_summary(review, events),
                 "missing_fields": missing_atomic_fields(repo, trade_date),
+                "ladder": ladder_to_dict(build_ladder(events, details)),
             }
         )
     return 0
@@ -90,6 +92,28 @@ def cmd_save_events(args: argparse.Namespace) -> int:
     with MarketReviewRepository(args.db) as repo:
         repo.save_price_limit_events(trade_date, events)
     _success({"trade_date": trade_date, "saved_count": len(events)})
+    return 0
+
+
+def cmd_save_event_details(args: argparse.Namespace) -> int:
+    guard = default_write_guard()
+    trade_date = guard.validate_write_trade_date(args.date)
+    payload = _read_json_input(args.input)
+    if isinstance(payload, dict) and "details" in payload:
+        details = payload["details"]
+    else:
+        details = payload
+    if not isinstance(details, list):
+        _failure("save-event-details 输入必须是明细数组或包含 details 的对象")
+        return 1
+    for detail in details:
+        if not isinstance(detail, dict):
+            _failure("save-event-details 中每条明细必须是 JSON 对象")
+            return 1
+        guard.validate_event_detail(detail)
+    with MarketReviewRepository(args.db) as repo:
+        repo.save_price_limit_event_details(trade_date, details)
+    _success({"trade_date": trade_date, "saved_count": len(details)})
     return 0
 
 
@@ -149,7 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    get_parser = subparsers.add_parser("get", help="Read review, events, summary")
+    get_parser = subparsers.add_parser("get", help="Read review, events, summary, and ladder")
     get_parser.add_argument("--date", required=True)
     get_parser.set_defaults(func=cmd_get)
 
@@ -162,6 +186,14 @@ def build_parser() -> argparse.ArgumentParser:
     save_events_parser.add_argument("--date", required=True)
     save_events_parser.add_argument("--input", default="-")
     save_events_parser.set_defaults(func=cmd_save_events)
+
+    save_event_details_parser = subparsers.add_parser(
+        "save-event-details",
+        help="Save or patch price-limit event details",
+    )
+    save_event_details_parser.add_argument("--date", required=True)
+    save_event_details_parser.add_argument("--input", default="-")
+    save_event_details_parser.set_defaults(func=cmd_save_event_details)
 
     delete_event_parser = subparsers.add_parser("delete-event", help="Delete one event")
     delete_event_parser.add_argument("--date", required=True)

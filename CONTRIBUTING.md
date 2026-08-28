@@ -2,6 +2,8 @@
 
 本文档面向参与 Daily Market Review 开发和调试的贡献者，不是最终用户安装说明。
 
+V2「每日梯队」已实现。开发前请阅读 [V2 每日梯队开发实现](docs/V2每日梯队开发实现.md)，并以 `references/数据字段与口径.md` 和 `references/资本市场复盘指标说明与统计口径.md` 的业务口径为准。
+
 ## 获取源码
 
 ```bash
@@ -30,6 +32,10 @@ EOF
 
 python3 scripts/cli.py --db /tmp/marketreview-test.sqlite3 save-events --date 2026-08-21 --input - <<'EOF'
 {"events": [{"market": "sh", "code": "600519", "name": "贵州茅台", "direction": "up", "closed_at_limit": true, "limit_rate_bp": 1000, "streak_height": 4}]}
+EOF
+
+python3 scripts/cli.py --db /tmp/marketreview-test.sqlite3 save-event-details --date 2026-08-21 --input - <<'EOF'
+{"details": [{"market": "sh", "code": "600519", "direction": "up", "sectors": ["白酒"], "limit_up_reasons": ["业绩增长"], "is_leader": true}]}
 EOF
 ```
 
@@ -63,4 +69,3 @@ daily-market-review/
 3. 按上述目录结构生成 `daily-market-review-vX.Y.Z.zip`。
 4. 创建 GitHub Release，上传版本包（不要依赖 GitHub 自动生成的 Source code 压缩包）。
 5. 用解压后的 ZIP 独立安装测试一次，确认不依赖仓库中的额外文件（如 `tests/`）。
-

@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from .calendar import TradingCalendar
 from .errors import InvalidFieldValueError
-from .validation import normalize_trade_date
+from .validation import normalize_trade_date, validate_event_detail_payload
 
 VALID_MARKETS = frozenset({"sh", "sz", "bj"})
 VALID_DIRECTIONS = frozenset({"up", "down"})
@@ -89,6 +89,20 @@ class WriteGuard:
             raise InvalidFieldValueError(f"streak_height 必须为整数：{streak_height!r}")
         if streak_height < 0:
             raise InvalidFieldValueError(f"streak_height 不能为负数：{streak_height!r}")
+
+    def validate_event_detail(self, detail: Mapping[str, Any]) -> None:
+        market = detail.get("market")
+        code = detail.get("code")
+        direction = detail.get("direction")
+        if type(market) is not str:
+            raise InvalidFieldValueError(f"market 必须为字符串：{market!r}")
+        if type(code) is not str:
+            raise InvalidFieldValueError(f"code 必须为字符串：{code!r}")
+        if type(direction) is not str:
+            raise InvalidFieldValueError(f"direction 必须为字符串：{direction!r}")
+
+        self.validate_event_identity(market, code, direction)
+        validate_event_detail_payload(detail)
 
     def _validate_market(self, market: str) -> None:
         if market not in VALID_MARKETS:

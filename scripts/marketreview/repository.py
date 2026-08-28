@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import replace
 from datetime import date
 from typing import Any, Mapping, Sequence
 
@@ -10,16 +11,29 @@ from .db import review_transaction
 from .errors import InvalidFieldValueError
 from .schema import (
     ATOMIC_FIELD_NAMES,
+    DETAIL_SELECT_COLUMNS,
+    PRICE_LIMIT_EVENT_DETAIL_LIST_FIELD_NAMES,
+    PRICE_LIMIT_EVENT_DETAIL_SCALAR_FIELD_NAMES,
+    PRICE_LIMIT_EVENT_DETAIL_SCALAR_FIELD_ORDER,
     PRICE_LIMIT_EVENT_FIELD_NAMES,
     PRICE_LIMIT_EVENT_IGNORED_FIELDS,
     REVIEW_SELECT_COLUMNS,
     DailyMarketReviewAtoms,
+    PriceLimitEventDetailLike,
+    PriceLimitEventDetailPatch,
+    PriceLimitEventDetailRecord,
     PriceLimitEventInput,
     PriceLimitEventLike,
     PriceLimitEventRecord,
 )
 from .sqlite_schema import PathLike, connect, init_db, utc_now_iso
-from .validation import normalize_trade_date, validate_atomic_field
+from .validation import (
+    normalize_string_list,
+    normalize_trade_date,
+    validate_atomic_field,
+    validate_event_detail_payload,
+    validate_event_detail_scalar,
+)
 
 
 def _row_to_atoms(row: sqlite3.Row) -> DailyMarketReviewAtoms:
@@ -38,6 +52,18 @@ def _row_to_event(row: sqlite3.Row) -> PriceLimitEventRecord:
         limit_rate_bp=row["limit_rate_bp"],
         streak_height=row["streak_height"],
     )
+
+
+def _sql_to_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    return bool(value)
+
+
+def _bool_to_sql(value: bool | None) -> int | None:
+    if value is None:
+        return None
+    return int(value)
 
 
 def _require_str(field_name: str, value: Any) -> str:
@@ -87,6 +113,18 @@ def _reject_duplicate_event_identities(records: Sequence[PriceLimitEventRecord])
         seen.add(key)
 
 
+def _reject_duplicate_detail_identities(patches: Sequence[PriceLimitEventDetailPatch]) -> None:
+    seen: set[tuple[str, str, str]] = set()
+    for patch in patches:
+        key = (patch.market, patch.code, patch.direction)
+        if key in seen:
+            raise InvalidFieldValueError(
+                "同一批写入存在重复事件扩展："
+                f"{patch.market}.{patch.code} {patch.direction}"
+            )
+        seen.add(key)
+
+
 def _normalize_event(trade_date: str, event: PriceLimitEventLike) -> PriceLimitEventRecord:
     payload = _event_mapping(event)
     return PriceLimitEventRecord(
@@ -99,6 +137,135 @@ def _normalize_event(trade_date: str, event: PriceLimitEventLike) -> PriceLimitE
         limit_rate_bp=_require_int("limit_rate_bp", payload["limit_rate_bp"]),
         streak_height=_require_int("streak_height", payload["streak_height"]),
     )
+
+
+def _detail_patch_as_mapping(detail: PriceLimitEventDetailPatch) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "market": detail.market,
+        "code": detail.code,
+        "direction": detail.direction,
+    }
+    for name in detail.provided_fields:
+        value = getattr(detail, name, None)
+        if name in PRICE_LIMIT_EVENT_DETAIL_LIST_FIELD_NAMES and type(value) is tuple:
+            value = list(value)
+        payload[name] = value
+    return payload
+
+
+def _normalize_detail_patch(detail: PriceLimitEventDetailLike) -> PriceLimitEventDetailPatch:
+    if isinstance(detail, PriceLimitEventDetailPatch):
+        return _normalize_detail_patch(_detail_patch_as_mapping(detail))
+    if isinstance(detail, Mapping):
+        validate_event_detail_payload(detail)
+        provided = frozenset(
+            name
+            for name in (
+                PRICE_LIMIT_EVENT_DETAIL_SCALAR_FIELD_NAMES
+                | PRICE_LIMIT_EVENT_DETAIL_LIST_FIELD_NAMES
+            )
+            if name in detail
+        )
+        payload: dict[str, Any] = {
+            "market": _require_str("market", detail["market"]),
+            "code": _require_str("code", detail["code"]),
+            "direction": _require_str("direction", detail["direction"]),
+            "provided_fields": provided,
+        }
+        for name in PRICE_LIMIT_EVENT_DETAIL_SCALAR_FIELD_ORDER:
+            if name in provided:
+                payload[name] = validate_event_detail_scalar(name, detail[name])
+        for name in PRICE_LIMIT_EVENT_DETAIL_LIST_FIELD_NAMES:
+            if name in provided:
+                payload[name] = tuple(normalize_string_list(name, detail[name]))
+        return PriceLimitEventDetailPatch(**payload)
+    raise InvalidFieldValueError(
+        "事件扩展必须为映射或 PriceLimitEventDetailPatch："
+        f"{detail!r}"
+    )
+
+
+def _trade_date_where(
+    start_date: str | date | None,
+    end_date: str | date | None,
+) -> tuple[str, list[str]]:
+    clauses: list[str] = []
+    params: list[str] = []
+    if start_date is not None:
+        clauses.append("trade_date >= ?")
+        params.append(normalize_trade_date(start_date))
+    if end_date is not None:
+        clauses.append("trade_date <= ?")
+        params.append(normalize_trade_date(end_date))
+    if not clauses:
+        return "", params
+    return " WHERE " + " AND ".join(clauses), params
+
+
+def _identity_key(row: sqlite3.Row) -> tuple[str, str, str, str]:
+    return (row["trade_date"], row["market"], row["code"], row["direction"])
+
+
+def _empty_detail_record(
+    trade_date: str,
+    market: str,
+    code: str,
+    direction: str,
+) -> PriceLimitEventDetailRecord:
+    return PriceLimitEventDetailRecord(
+        trade_date=trade_date,
+        market=market,
+        code=code,
+        direction=direction,
+        previous_turnover_amount=None,
+        auction_amount=None,
+        previous_close=None,
+        open_price=None,
+        turnover_amount=None,
+        turnover_rate=None,
+        is_leader=None,
+        note=None,
+        sectors=[],
+        limit_up_reasons=[],
+    )
+
+
+def _detail_record_from_row(row: sqlite3.Row) -> PriceLimitEventDetailRecord:
+    return PriceLimitEventDetailRecord(
+        trade_date=row["trade_date"],
+        market=row["market"],
+        code=row["code"],
+        direction=row["direction"],
+        previous_turnover_amount=row["previous_turnover_amount"],
+        auction_amount=row["auction_amount"],
+        previous_close=row["previous_close"],
+        open_price=row["open_price"],
+        turnover_amount=row["turnover_amount"],
+        turnover_rate=row["turnover_rate"],
+        is_leader=_sql_to_bool(row["is_leader"]),
+        note=row["note"],
+        sectors=[],
+        limit_up_reasons=[],
+    )
+
+
+def _assemble_detail_records(
+    detail_rows: Sequence[sqlite3.Row],
+    sector_rows: Sequence[sqlite3.Row],
+    reason_rows: Sequence[sqlite3.Row],
+) -> list[PriceLimitEventDetailRecord]:
+    records: dict[tuple[str, str, str, str], PriceLimitEventDetailRecord] = {}
+    for row in detail_rows:
+        records[_identity_key(row)] = _detail_record_from_row(row)
+    for row in sector_rows:
+        key = _identity_key(row)
+        record = records.get(key) or _empty_detail_record(*key)
+        records[key] = replace(record, sectors=[*record.sectors, row["value"]])
+    for row in reason_rows:
+        key = _identity_key(row)
+        record = records.get(key) or _empty_detail_record(*key)
+        records[key] = replace(record, limit_up_reasons=[*record.limit_up_reasons, row["value"]])
+    return [records[key] for key in sorted(records)]
 
 
 class MarketReviewRepository:
@@ -227,6 +394,58 @@ class MarketReviewRepository:
         rows = self._conn.execute(query, params).fetchall()
         return [_row_to_event(row) for row in rows]
 
+    def save_price_limit_event_details(
+        self,
+        trade_date: str | date,
+        details: Sequence[PriceLimitEventDetailLike],
+    ) -> None:
+        normalized_date = normalize_trade_date(trade_date)
+        if not details:
+            return
+        patches = [_normalize_detail_patch(detail) for detail in details]
+        _reject_duplicate_detail_identities(patches)
+        now = utc_now_iso()
+        with review_transaction(self._conn):
+            for patch in patches:
+                self._apply_detail_patch(normalized_date, patch, now=now)
+
+    def get_price_limit_event_details(
+        self,
+        trade_date: str | date,
+    ) -> list[PriceLimitEventDetailRecord]:
+        return self.list_price_limit_event_details(start_date=trade_date, end_date=trade_date)
+
+    def list_price_limit_event_details(
+        self,
+        start_date: str | date | None = None,
+        end_date: str | date | None = None,
+    ) -> list[PriceLimitEventDetailRecord]:
+        where, params = _trade_date_where(start_date, end_date)
+        columns = ", ".join(DETAIL_SELECT_COLUMNS)
+        detail_rows = self._conn.execute(
+            f"SELECT {columns} FROM daily_price_limit_event_detail{where}",
+            params,
+        ).fetchall()
+        sector_rows = self._conn.execute(
+            f"""
+            SELECT trade_date, market, code, direction, value
+            FROM daily_price_limit_event_sector
+            {where}
+            ORDER BY trade_date, market, code, direction, position
+            """,
+            params,
+        ).fetchall()
+        reason_rows = self._conn.execute(
+            f"""
+            SELECT trade_date, market, code, direction, value
+            FROM daily_price_limit_event_reason
+            {where}
+            ORDER BY trade_date, market, code, direction, position
+            """,
+            params,
+        ).fetchall()
+        return _assemble_detail_records(detail_rows, sector_rows, reason_rows)
+
     def delete_price_limit_events(self, trade_date: str | date) -> None:
         normalized_date = normalize_trade_date(trade_date)
         with review_transaction(self._conn):
@@ -275,6 +494,30 @@ class MarketReviewRepository:
             )
         now = utc_now_iso()
         with review_transaction(self._conn):
+            if not self._event_exists(
+                normalized_date,
+                market_value,
+                code_value,
+                old_direction_value,
+            ):
+                raise InvalidFieldValueError(
+                    f"被替换事件不存在：{market_value}.{code_value} {old_direction_value}"
+                )
+            if self._event_exists(
+                normalized_date,
+                record.market,
+                record.code,
+                record.direction,
+            ):
+                raise InvalidFieldValueError(
+                    f"目标方向已存在：{record.market}.{record.code} {record.direction}"
+                )
+            extension = self._load_event_extension(
+                normalized_date,
+                market_value,
+                code_value,
+                old_direction_value,
+            )
             self._delete_event_row(
                 normalized_date,
                 market_value,
@@ -282,6 +525,16 @@ class MarketReviewRepository:
                 old_direction_value,
             )
             self._upsert_event(record, now=now)
+            if extension is not None:
+                self._restore_event_extension(
+                    normalized_date,
+                    record.market,
+                    record.code,
+                    record.direction,
+                    extension,
+                    include_reasons=record.direction == "up",
+                    now=now,
+                )
 
     def _delete_event_row(
         self,
@@ -352,3 +605,232 @@ class MarketReviewRepository:
                 now,
             ),
         )
+
+    def _event_exists(self, trade_date: str, market: str, code: str, direction: str) -> bool:
+        row = self._conn.execute(
+            """
+            SELECT 1 FROM daily_price_limit_event
+            WHERE trade_date = ? AND market = ? AND code = ? AND direction = ?
+            """,
+            (trade_date, market, code, direction),
+        ).fetchone()
+        return row is not None
+
+    def _apply_detail_patch(
+        self,
+        trade_date: str,
+        patch: PriceLimitEventDetailPatch,
+        *,
+        now: str,
+    ) -> None:
+        if not self._event_exists(trade_date, patch.market, patch.code, patch.direction):
+            raise InvalidFieldValueError(
+                f"父事件不存在：{patch.market}.{patch.code} {patch.direction}"
+            )
+        scalar_names = [
+            name for name in PRICE_LIMIT_EVENT_DETAIL_SCALAR_FIELD_ORDER if patch.has(name)
+        ]
+        if scalar_names:
+            self._ensure_detail_row(trade_date, patch.market, patch.code, patch.direction, now)
+            assignments = [f"{name} = ?" for name in scalar_names]
+            values: list[Any] = []
+            for name in scalar_names:
+                value = getattr(patch, name)
+                if name == "is_leader":
+                    value = _bool_to_sql(value)
+                values.append(value)
+            values.extend([now, trade_date, patch.market, patch.code, patch.direction])
+            self._conn.execute(
+                f"""
+                UPDATE daily_price_limit_event_detail
+                SET {", ".join(assignments)}, updated_at = ?
+                WHERE trade_date = ? AND market = ? AND code = ? AND direction = ?
+                """,
+                values,
+            )
+        if patch.has("sectors"):
+            self._replace_string_list(
+                "daily_price_limit_event_sector",
+                trade_date,
+                patch.market,
+                patch.code,
+                patch.direction,
+                list(patch.sectors or ()),
+            )
+        if patch.has("limit_up_reasons"):
+            self._replace_string_list(
+                "daily_price_limit_event_reason",
+                trade_date,
+                patch.market,
+                patch.code,
+                patch.direction,
+                list(patch.limit_up_reasons or ()),
+            )
+
+    def _ensure_detail_row(
+        self,
+        trade_date: str,
+        market: str,
+        code: str,
+        direction: str,
+        now: str,
+    ) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO daily_price_limit_event_detail (
+                trade_date, market, code, direction, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(trade_date, market, code, direction) DO NOTHING
+            """,
+            (trade_date, market, code, direction, now, now),
+        )
+
+    def _replace_string_list(
+        self,
+        table: str,
+        trade_date: str,
+        market: str,
+        code: str,
+        direction: str,
+        values: Sequence[str],
+    ) -> None:
+        if table not in {
+            "daily_price_limit_event_sector",
+            "daily_price_limit_event_reason",
+        }:
+            raise InvalidFieldValueError(f"未知多值表：{table}")
+        self._conn.execute(
+            f"""
+            DELETE FROM {table}
+            WHERE trade_date = ? AND market = ? AND code = ? AND direction = ?
+            """,
+            (trade_date, market, code, direction),
+        )
+        for position, value in enumerate(values):
+            self._conn.execute(
+                f"""
+                INSERT INTO {table} (
+                    trade_date, market, code, direction, position, value
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (trade_date, market, code, direction, position, value),
+            )
+
+    def _load_event_extension(
+        self,
+        trade_date: str,
+        market: str,
+        code: str,
+        direction: str,
+    ) -> tuple[PriceLimitEventDetailRecord, bool] | None:
+        columns = ", ".join(DETAIL_SELECT_COLUMNS)
+        row = self._conn.execute(
+            f"""
+            SELECT {columns} FROM daily_price_limit_event_detail
+            WHERE trade_date = ? AND market = ? AND code = ? AND direction = ?
+            """,
+            (trade_date, market, code, direction),
+        ).fetchone()
+        sectors = self._list_string_values(
+            "daily_price_limit_event_sector",
+            trade_date,
+            market,
+            code,
+            direction,
+        )
+        reasons = self._list_string_values(
+            "daily_price_limit_event_reason",
+            trade_date,
+            market,
+            code,
+            direction,
+        )
+        if row is None and not sectors and not reasons:
+            return None
+        record = (
+            _detail_record_from_row(row)
+            if row is not None
+            else _empty_detail_record(trade_date, market, code, direction)
+        )
+        record = replace(record, sectors=sectors, limit_up_reasons=reasons)
+        return record, row is not None
+
+    def _list_string_values(
+        self,
+        table: str,
+        trade_date: str,
+        market: str,
+        code: str,
+        direction: str,
+    ) -> list[str]:
+        if table not in {
+            "daily_price_limit_event_sector",
+            "daily_price_limit_event_reason",
+        }:
+            raise InvalidFieldValueError(f"未知多值表：{table}")
+        rows = self._conn.execute(
+            f"""
+            SELECT value FROM {table}
+            WHERE trade_date = ? AND market = ? AND code = ? AND direction = ?
+            ORDER BY position
+            """,
+            (trade_date, market, code, direction),
+        ).fetchall()
+        return [row["value"] for row in rows]
+
+    def _restore_event_extension(
+        self,
+        trade_date: str,
+        market: str,
+        code: str,
+        direction: str,
+        extension: tuple[PriceLimitEventDetailRecord, bool],
+        *,
+        include_reasons: bool,
+        now: str,
+    ) -> None:
+        record, has_detail_row = extension
+        if has_detail_row:
+            self._conn.execute(
+                """
+                INSERT INTO daily_price_limit_event_detail (
+                    trade_date, market, code, direction,
+                    previous_turnover_amount, auction_amount, previous_close, open_price,
+                    turnover_amount, turnover_rate, is_leader, note,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    trade_date,
+                    market,
+                    code,
+                    direction,
+                    record.previous_turnover_amount,
+                    record.auction_amount,
+                    record.previous_close,
+                    record.open_price,
+                    record.turnover_amount,
+                    record.turnover_rate,
+                    _bool_to_sql(record.is_leader),
+                    record.note,
+                    now,
+                    now,
+                ),
+            )
+        self._replace_string_list(
+            "daily_price_limit_event_sector",
+            trade_date,
+            market,
+            code,
+            direction,
+            record.sectors,
+        )
+        if include_reasons:
+            self._replace_string_list(
+                "daily_price_limit_event_reason",
+                trade_date,
+                market,
+                code,
+                direction,
+                record.limit_up_reasons,
+            )

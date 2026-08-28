@@ -38,6 +38,15 @@
     },
     {
       "market": "sz",
+      "code": "000858",
+      "name": "五粮液",
+      "direction": "up",
+      "closed_at_limit": true,
+      "limit_rate_bp": 1000,
+      "streak_height": 2
+    },
+    {
+      "market": "sz",
       "code": "300001",
       "name": "示例科技",
       "direction": "up",
@@ -71,6 +80,47 @@
       "closed_at_limit": false,
       "limit_rate_bp": 1000,
       "streak_height": 0
+    }
+  ],
+  "event_details": [
+    {
+      "market": "sh",
+      "code": "600519",
+      "direction": "up",
+      "sectors": ["白酒", "消费"],
+      "limit_up_reasons": ["业绩增长", "消费复苏"],
+      "previous_turnover_amount": 8450000000,
+      "auction_amount": 326000000,
+      "previous_close": 1520.5,
+      "open_price": 1568.0,
+      "turnover_amount": 9630000000,
+      "turnover_rate": 0.0125,
+      "is_leader": true,
+      "note": "用户确认的主线龙头"
+    },
+    {
+      "market": "bj",
+      "code": "830799",
+      "direction": "up",
+      "sectors": ["软件"],
+      "previous_close": 10.0,
+      "open_price": 13.0,
+      "is_leader": false
+    },
+    {
+      "market": "sz",
+      "code": "300001",
+      "direction": "up",
+      "sectors": ["科技"],
+      "auction_amount": 1000000,
+      "previous_turnover_amount": 0
+    },
+    {
+      "market": "sh",
+      "code": "600002",
+      "direction": "down",
+      "sectors": ["地产"],
+      "note": "收盘跌停"
     }
   ]
 }

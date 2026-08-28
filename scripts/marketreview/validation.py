@@ -5,10 +5,17 @@ from __future__ import annotations
 import math
 import re
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Mapping
 
 from .errors import InvalidFieldValueError
-from .schema import ATOMIC_FIELD_NAMES
+from .schema import (
+    ATOMIC_FIELD_NAMES,
+    PRICE_LIMIT_EVENT_DETAIL_DERIVED_FIELD_NAMES,
+    PRICE_LIMIT_EVENT_DETAIL_IDENTITY_FIELD_NAMES,
+    PRICE_LIMIT_EVENT_DETAIL_IGNORED_FIELDS,
+    PRICE_LIMIT_EVENT_DETAIL_LIST_FIELD_NAMES,
+    PRICE_LIMIT_EVENT_DETAIL_SCALAR_FIELD_NAMES,
+)
 
 _DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _INT_FIELDS = frozenset(
@@ -78,3 +85,92 @@ def validate_atomic_field(key: str, value: Any) -> Any:
             raise InvalidFieldValueError(f"{key} 必须为有限数值")
         return float(value)
     raise InvalidFieldValueError(f"未知字段：{key}")
+
+
+_DETAIL_PRICE_FIELDS = frozenset({"previous_close", "open_price"})
+_DETAIL_NON_NEGATIVE_FIELDS = frozenset(
+    {
+        "previous_turnover_amount",
+        "auction_amount",
+        "turnover_amount",
+        "turnover_rate",
+    }
+)
+_DETAIL_ALLOWED_FIELDS = (
+    PRICE_LIMIT_EVENT_DETAIL_IDENTITY_FIELD_NAMES
+    | PRICE_LIMIT_EVENT_DETAIL_SCALAR_FIELD_NAMES
+    | PRICE_LIMIT_EVENT_DETAIL_LIST_FIELD_NAMES
+)
+
+
+def normalize_string_list(field_name: str, value: Any) -> list[str]:
+    if type(value) is not list:
+        raise InvalidFieldValueError(f"{field_name} 必须为数组")
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for index, item in enumerate(value):
+        if type(item) is not str:
+            raise InvalidFieldValueError(f"{field_name}[{index}] 必须为字符串")
+        cleaned = item.strip()
+        if not cleaned:
+            raise InvalidFieldValueError(f"{field_name} 不能包含空字符串")
+        if cleaned in seen:
+            continue
+        seen.add(cleaned)
+        normalized.append(cleaned)
+    return normalized
+
+
+def validate_event_detail_scalar(field_name: str, value: Any) -> Any:
+    if field_name not in PRICE_LIMIT_EVENT_DETAIL_SCALAR_FIELD_NAMES:
+        raise InvalidFieldValueError(f"未知字段：{field_name}")
+    if value is None:
+        return None
+    if field_name in _DETAIL_PRICE_FIELDS:
+        if not _is_finite_number(value) or float(value) <= 0:
+            raise InvalidFieldValueError(f"{field_name} 必须为大于 0 的有限数值")
+        return float(value)
+    if field_name in _DETAIL_NON_NEGATIVE_FIELDS:
+        if not _is_finite_number(value) or float(value) < 0:
+            raise InvalidFieldValueError(f"{field_name} 必须为大于等于 0 的有限数值")
+        return float(value)
+    if field_name == "is_leader":
+        if type(value) is not bool:
+            raise InvalidFieldValueError(f"is_leader 必须为布尔值或 null：{value!r}")
+        return value
+    if field_name == "note":
+        if type(value) is not str:
+            raise InvalidFieldValueError(f"note 必须为字符串或 null：{value!r}")
+        cleaned = value.strip()
+        return cleaned if cleaned else None
+    raise InvalidFieldValueError(f"未知字段：{field_name}")
+
+
+def validate_event_detail_payload(detail: Mapping[str, Any]) -> None:
+    extra = (
+        set(detail)
+        - _DETAIL_ALLOWED_FIELDS
+        - PRICE_LIMIT_EVENT_DETAIL_IGNORED_FIELDS
+    )
+    derived = extra & PRICE_LIMIT_EVENT_DETAIL_DERIVED_FIELD_NAMES
+    if derived:
+        raise InvalidFieldValueError(
+            f"{', '.join(sorted(derived))} 是读取派生字段，不能写入"
+        )
+    if extra:
+        raise InvalidFieldValueError(f"未知字段：{', '.join(sorted(extra))}")
+
+    missing_identity = PRICE_LIMIT_EVENT_DETAIL_IDENTITY_FIELD_NAMES - set(detail)
+    if missing_identity:
+        raise InvalidFieldValueError(f"缺少字段：{', '.join(sorted(missing_identity))}")
+
+    direction = detail.get("direction")
+    if "limit_up_reasons" in detail and direction != "up":
+        raise InvalidFieldValueError("limit_up_reasons 只允许写入 direction=up 的事件")
+
+    for field_name in PRICE_LIMIT_EVENT_DETAIL_SCALAR_FIELD_NAMES:
+        if field_name in detail:
+            validate_event_detail_scalar(field_name, detail[field_name])
+    for field_name in PRICE_LIMIT_EVENT_DETAIL_LIST_FIELD_NAMES:
+        if field_name in detail:
+            normalize_string_list(field_name, detail[field_name])

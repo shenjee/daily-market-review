@@ -14,10 +14,14 @@ from unittest.mock import patch
 
 import _bootstrap  # noqa: F401
 
-from marketreview.errors import InvalidFieldValueError
+from marketreview.errors import InvalidFieldValueError, MarketReviewError
 from marketreview.repository import MarketReviewRepository
-from marketreview.schema import PriceLimitEventInput, PriceLimitEventRecord
-from marketreview.sqlite_schema import init_db
+from marketreview.schema import PriceLimitEventInput
+from marketreview.sqlite_schema import (
+    DDL_DAILY_MARKET_REVIEW,
+    DDL_DAILY_PRICE_LIMIT_EVENT,
+    init_db,
+)
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "golden_2026_08_21.json"
 
@@ -86,6 +90,43 @@ class TestMarketReviewRepository(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0].direction, "down")
 
+    def test_replace_price_limit_event_direction_requires_existing_old_identity(self) -> None:
+        with self.assertRaises(InvalidFieldValueError) as ctx:
+            self.repo.replace_price_limit_event_direction(
+                "2026-08-21",
+                "sh",
+                "600519",
+                "up",
+                PriceLimitEventInput("sh", "600519", "贵州茅台", "down", True, 1000, 0),
+            )
+        self.assertIn("被替换事件不存在", str(ctx.exception))
+        self.assertEqual(self.repo.get_price_limit_events("2026-08-21"), [])
+
+    def test_replace_price_limit_event_direction_rejects_existing_target_identity(self) -> None:
+        self.repo.save_price_limit_events(
+            "2026-08-21",
+            [
+                PriceLimitEventInput("sh", "600519", "贵州茅台", "up", True, 1000, 4),
+                PriceLimitEventInput("sh", "600519", "贵州茅台", "down", True, 1000, 0),
+            ],
+        )
+        with self.assertRaises(InvalidFieldValueError) as ctx:
+            self.repo.replace_price_limit_event_direction(
+                "2026-08-21",
+                "sh",
+                "600519",
+                "up",
+                PriceLimitEventInput("sh", "600519", "贵州茅台", "down", False, 1000, 0),
+            )
+        self.assertIn("目标方向已存在", str(ctx.exception))
+        events = {
+            item.direction: item
+            for item in self.repo.get_price_limit_events("2026-08-21")
+        }
+        self.assertEqual(set(events), {"up", "down"})
+        self.assertEqual(events["up"].streak_height, 4)
+        self.assertTrue(events["down"].closed_at_limit)
+
     def test_repository_accepts_path_object(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "market_review.sqlite3"
@@ -116,15 +157,126 @@ class TestMarketReviewRepository(unittest.TestCase):
 
 
 class TestSchemaInit(unittest.TestCase):
-    def test_init_db_creates_review_and_event_tables(self) -> None:
+    def test_init_db_creates_review_event_and_extension_tables(self) -> None:
         conn = sqlite3.connect(":memory:")
         try:
             init_db(conn)
-            self.assertEqual(_user_tables(conn), {"daily_market_review", "daily_price_limit_event"})
+            self.assertEqual(
+                _user_tables(conn),
+                {
+                    "daily_market_review",
+                    "daily_price_limit_event",
+                    "daily_price_limit_event_detail",
+                    "daily_price_limit_event_sector",
+                    "daily_price_limit_event_reason",
+                },
+            )
             journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
             self.assertIn(journal_mode.lower(), {"wal", "memory"})
+            self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone()[0], 1)
         finally:
             conn.close()
+
+    def test_init_db_upgrades_v1_database_without_rewriting_data(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        try:
+            conn.execute(DDL_DAILY_MARKET_REVIEW)
+            conn.execute(DDL_DAILY_PRICE_LIMIT_EVENT)
+            conn.execute(
+                """
+                INSERT INTO daily_price_limit_event (
+                    trade_date, market, code, name, direction,
+                    closed_at_limit, limit_rate_bp, streak_height,
+                    created_at, updated_at
+                ) VALUES (
+                    '2026-08-21', 'sh', '600519', '贵州茅台', 'up',
+                    1, 1000, 4, '2026-08-21T00:00:00+00:00', '2026-08-21T00:00:00+00:00'
+                )
+                """
+            )
+            conn.commit()
+            self.assertEqual(
+                _user_tables(conn),
+                {"daily_market_review", "daily_price_limit_event"},
+            )
+            init_db(conn)
+            self.assertEqual(
+                _user_tables(conn),
+                {
+                    "daily_market_review",
+                    "daily_price_limit_event",
+                    "daily_price_limit_event_detail",
+                    "daily_price_limit_event_sector",
+                    "daily_price_limit_event_reason",
+                },
+            )
+            row = conn.execute(
+                """
+                SELECT name, streak_height FROM daily_price_limit_event
+                WHERE trade_date = '2026-08-21' AND code = '600519'
+                """
+            ).fetchone()
+            self.assertEqual(tuple(row), ("贵州茅台", 4))
+            self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+        finally:
+            conn.close()
+
+    def test_init_db_rejects_in_transaction_connection_without_foreign_keys(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        try:
+            conn.execute("BEGIN")
+            self.assertTrue(conn.in_transaction)
+            self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone()[0], 0)
+            with self.assertRaises(MarketReviewError) as ctx:
+                init_db(conn)
+            self.assertEqual(ctx.exception.code, "SQLITE_FOREIGN_KEYS")
+            self.assertIn("事务", ctx.exception.message)
+            self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone()[0], 0)
+            self.assertEqual(_user_tables(conn), set())
+        finally:
+            conn.close()
+
+    def test_init_db_accepts_in_transaction_connection_when_foreign_keys_already_on(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("BEGIN")
+            self.assertTrue(conn.in_transaction)
+            self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+            init_db(conn)
+            self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+            self.assertIn(
+                conn.execute("PRAGMA journal_mode").fetchone()[0].lower(),
+                {"wal", "memory"},
+            )
+            self.assertIn("daily_price_limit_event_detail", _user_tables(conn))
+        finally:
+            conn.close()
+
+    def test_init_db_rejects_file_connection_in_transaction_when_wal_not_enabled(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = sqlite3.connect(Path(tmp) / "market_review.sqlite3")
+            try:
+                conn.execute("PRAGMA foreign_keys=ON")
+                conn.execute("BEGIN")
+                self.assertTrue(conn.in_transaction)
+                self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+                self.assertEqual(
+                    conn.execute("PRAGMA journal_mode").fetchone()[0].lower(),
+                    "delete",
+                )
+                with self.assertRaises(MarketReviewError) as ctx:
+                    init_db(conn)
+                self.assertEqual(ctx.exception.code, "SQLITE_JOURNAL_MODE")
+                self.assertIn("WAL", ctx.exception.message)
+                self.assertEqual(
+                    conn.execute("PRAGMA journal_mode").fetchone()[0].lower(),
+                    "delete",
+                )
+                self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+                self.assertEqual(_user_tables(conn), set())
+            finally:
+                conn.close()
 
 
 if __name__ == "__main__":

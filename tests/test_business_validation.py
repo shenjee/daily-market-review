@@ -96,6 +96,52 @@ class TestWriteGuard(unittest.TestCase):
             }
         )
 
+    def test_accepts_valid_event_detail(self) -> None:
+        self.guard.validate_event_detail(
+            {
+                "market": "sh",
+                "code": "600519",
+                "direction": "up",
+                "sectors": ["白酒"],
+                "limit_up_reasons": ["业绩增长"],
+                "previous_close": 1520.5,
+                "is_leader": False,
+            }
+        )
+
+    def test_rejects_limit_up_reasons_on_down_event(self) -> None:
+        with self.assertRaises(InvalidFieldValueError):
+            self.guard.validate_event_detail(
+                {
+                    "market": "sh",
+                    "code": "600519",
+                    "direction": "down",
+                    "limit_up_reasons": ["误标"],
+                }
+            )
+
+    def test_rejects_non_positive_price(self) -> None:
+        with self.assertRaises(InvalidFieldValueError):
+            self.guard.validate_event_detail(
+                {
+                    "market": "sh",
+                    "code": "600519",
+                    "direction": "up",
+                    "open_price": 0,
+                }
+            )
+
+    def test_rejects_integer_is_leader(self) -> None:
+        with self.assertRaises(InvalidFieldValueError):
+            self.guard.validate_event_detail(
+                {
+                    "market": "sh",
+                    "code": "600519",
+                    "direction": "up",
+                    "is_leader": 1,
+                }
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
