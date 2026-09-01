@@ -220,6 +220,60 @@ class TestCli(unittest.TestCase):
             self.assertIs(stock["is_leader"], True)
             self.assertAlmostEqual(stock["open_change"], 1568.0 / 1520.5 - 1)
 
+    def test_get_streak_rate_uses_previous_trading_day_effective_limit_up(self) -> None:
+        previous_events = [
+            {
+                "market": "sh",
+                "code": "600519",
+                "name": "贵州茅台",
+                "direction": "up",
+                "closed_at_limit": True,
+                "limit_rate_bp": 1000,
+                "streak_height": 1,
+            },
+            {
+                "market": "sz",
+                "code": "000858",
+                "name": "五粮液",
+                "direction": "up",
+                "closed_at_limit": True,
+                "limit_rate_bp": 1000,
+                "streak_height": 1,
+            },
+        ]
+        today_events = [
+            {
+                "market": "sh",
+                "code": "600519",
+                "name": "贵州茅台",
+                "direction": "up",
+                "closed_at_limit": True,
+                "limit_rate_bp": 1000,
+                "streak_height": 2,
+            }
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "market_review.sqlite3"
+            with patch("sys.stdin", io.StringIO(json.dumps({"events": previous_events}))):
+                rc = cli.main(
+                    ["--db", str(db_path), "save-events", "--date", "2026-08-20", "--input", "-"]
+                )
+            self.assertEqual(rc, 0)
+            with patch("sys.stdin", io.StringIO(json.dumps({"events": today_events}))):
+                rc = cli.main(
+                    ["--db", str(db_path), "save-events", "--date", "2026-08-21", "--input", "-"]
+                )
+            self.assertEqual(rc, 0)
+
+            get_buffer = io.StringIO()
+            with patch("sys.stdout", get_buffer):
+                rc = cli.main(["--db", str(db_path), "get", "--date", "2026-08-21"])
+            self.assertEqual(rc, 0)
+            payload = json.loads(get_buffer.getvalue())
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["data"]["summary"]["streak_board_count"], 1)
+            self.assertEqual(payload["data"]["summary"]["streak_rate_pct"], 50.0)
+
     def test_save_event_details_rejects_reasons_on_down_event(self) -> None:
         event = {
             "market": "sh",

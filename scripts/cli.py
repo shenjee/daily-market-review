@@ -8,10 +8,12 @@ import sys
 from typing import Any
 
 from marketreview.business_validation import default_write_guard
+from marketreview.calendar import CalendarUnavailableError, TradingCalendar
 from marketreview.errors import MarketReviewError
 from marketreview.ladder import build_ladder, ladder_to_dict
 from marketreview.paths import resolve_db_path
 from marketreview.repository import MarketReviewRepository
+from marketreview.schema import PriceLimitEventRecord
 from marketreview.service import missing_atomic_fields
 from marketreview.summary import compute_summary, events_to_dict, review_to_dict
 from marketreview.validation import normalize_trade_date
@@ -40,18 +42,32 @@ def _read_json_input(path: str) -> Any:
     return json.loads(raw)
 
 
+def _previous_trading_day_events(
+    repo: MarketReviewRepository,
+    trade_date: str,
+) -> list[PriceLimitEventRecord]:
+    try:
+        previous = TradingCalendar().previous_trading_day(trade_date)
+    except CalendarUnavailableError:
+        return []
+    if previous is None:
+        return []
+    return repo.get_price_limit_events(previous)
+
+
 def cmd_get(args: argparse.Namespace) -> int:
     trade_date = normalize_trade_date(args.date)
     with MarketReviewRepository(args.db) as repo:
         review = repo.get_review(trade_date)
         events = repo.get_price_limit_events(trade_date)
         details = repo.get_price_limit_event_details(trade_date)
+        previous_events = _previous_trading_day_events(repo, trade_date)
         _success(
             {
                 "trade_date": trade_date,
                 "review": review_to_dict(review),
                 "events": events_to_dict(events),
-                "summary": compute_summary(review, events),
+                "summary": compute_summary(review, events, previous_events),
                 "missing_fields": missing_atomic_fields(repo, trade_date),
                 "ladder": ladder_to_dict(build_ladder(events, details)),
             }

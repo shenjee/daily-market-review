@@ -63,6 +63,44 @@ class TestSummary(unittest.TestCase):
         assert ratio is not None
         self.assertEqual(ratio["display"], "3.87:1")
 
+    def test_streak_rate_uses_previous_day_effective_limit_up(self) -> None:
+        today = [
+            PriceLimitEventRecord("2026-08-21", "sh", "600519", "贵州茅台", "up", True, 1000, 2),
+            PriceLimitEventRecord("2026-08-21", "sz", "000858", "五粮液", "up", True, 1000, 1),
+        ]
+        previous = [
+            PriceLimitEventRecord("2026-08-20", "sh", "600519", "贵州茅台", "up", True, 1000, 1),
+            PriceLimitEventRecord("2026-08-20", "sz", "000858", "五粮液", "up", True, 1000, 1),
+            PriceLimitEventRecord("2026-08-20", "sz", "000001", "平安银行", "up", True, 1000, 1),
+            PriceLimitEventRecord("2026-08-20", "sz", "300001", "示例科技", "up", False, 2000, 0),
+        ]
+        summary = compute_summary(None, today, previous)
+        self.assertEqual(summary["streak_board_count"], 1)
+        self.assertEqual(summary["effective_limit_up_count"], 2)
+        self.assertEqual(summary["streak_rate_pct"], 33.33)
+
+    def test_streak_rate_empty_when_previous_effective_limit_up_is_zero(self) -> None:
+        today = [
+            PriceLimitEventRecord("2026-08-21", "sh", "600519", "贵州茅台", "up", True, 1000, 2),
+        ]
+        previous = [
+            PriceLimitEventRecord("2026-08-20", "sz", "300001", "示例科技", "up", False, 2000, 0),
+        ]
+        summary = compute_summary(None, today, previous)
+        self.assertIsNone(summary["streak_rate_pct"])
+        summary = compute_summary(None, today)
+        self.assertIsNone(summary["streak_rate_pct"])
+
+    def test_streak_rate_zero_when_today_has_no_streak_boards(self) -> None:
+        today = [
+            PriceLimitEventRecord("2026-08-21", "sz", "000858", "五粮液", "up", True, 1000, 1),
+        ]
+        previous = [
+            PriceLimitEventRecord("2026-08-20", "sh", "600519", "贵州茅台", "up", True, 1000, 1),
+        ]
+        summary = compute_summary(None, today, previous)
+        self.assertEqual(summary["streak_rate_pct"], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

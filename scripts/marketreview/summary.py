@@ -58,6 +58,7 @@ def _sum_all_required(values: Sequence[float | None]) -> float | None:
 def compute_summary(
     review: DailyMarketReviewAtoms | None,
     events: Sequence[PriceLimitEventRecord],
+    previous_events: Sequence[PriceLimitEventRecord] = (),
 ) -> dict[str, Any]:
     effective_up = _effective_limit_up(events)
     limit_up_20 = [
@@ -93,9 +94,10 @@ def compute_summary(
         if up_total > 0
         else None
     )
+    previous_effective_up = _effective_limit_up(previous_events)
     streak_rate = (
-        round(len(streak_board) / len(effective_up) * 100, 2)
-        if effective_up
+        round(len(streak_board) / len(previous_effective_up) * 100, 2)
+        if previous_effective_up
         else None
     )
 

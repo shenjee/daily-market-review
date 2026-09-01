@@ -2,7 +2,14 @@
 
 本文档面向参与 Daily Market Review 开发和调试的贡献者，不是最终用户安装说明。
 
-V2「每日梯队」已实现。开发前请阅读 [V2 每日梯队开发实现](docs/V2每日梯队开发实现.md)，并以 `references/数据字段与口径.md` 和 `references/资本市场复盘指标说明与统计口径.md` 的业务口径为准。
+开发前请阅读：
+
+- [PRD](docs/PRD.md)
+- [数据库设计](docs/数据库设计.md)
+- `references/数据字段与口径.md`
+- `references/资本市场复盘指标说明与统计口径.md`
+
+[V2 每日梯队开发实现](docs/V2每日梯队开发实现.md) 是已落地的历史实现规格，不作为现行产品合同。
 
 ## 获取源码
 
@@ -66,6 +73,7 @@ daily-market-review/
 
 1. 运行全部单元测试。
 2. 确认或更新 `assets/trading_calendar.json` 的覆盖范围。
-3. 按上述目录结构生成 `daily-market-review-vX.Y.Z.zip`。
-4. 创建 GitHub Release，上传版本包（不要依赖 GitHub 自动生成的 Source code 压缩包）。
-5. 用解压后的 ZIP 独立安装测试一次，确认不依赖仓库中的额外文件（如 `tests/`）。
+3. 确认运行时说明文件不含开发文档目录字面量（由 `tests/test_runtime_docs.py` 覆盖；也可手动扫描 `SKILL.md`、`README.md` 和 `references/`）。
+4. 按上述目录结构生成 `daily-market-review-vX.Y.Z.zip`。
+5. 创建 GitHub Release，上传版本包（不要依赖 GitHub 自动生成的 Source code 压缩包）。
+6. 用解压后的 ZIP 独立安装测试一次，确认不依赖仓库中的额外文件（如 `tests/`）。
