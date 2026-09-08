@@ -40,7 +40,7 @@
 
 如果 Agent 不支持自动安装，或你希望自行管理安装位置，可以手动安装：
 
-1. 打开项目的 [Releases 页面](https://github.com/shenjee/daily-market-review/releases)，下载最新版本包。文件名格式为 `daily-market-review-vX.Y.Z.zip`（例如 `daily-market-review-v0.3.0.zip`）。请勿下载 GitHub 自动生成的 `Source code (zip)`。
+1. 打开项目的 [Releases 页面](https://github.com/shenjee/daily-market-review/releases)，下载最新版本包。文件名格式为 `daily-market-review-vX.Y.Z.zip`（例如 `daily-market-review-v0.3.1.zip`）。请勿下载 GitHub 自动生成的 `Source code (zip)`。
 2. 解压，得到 `daily-market-review` 目录。
 3. 将该目录放入所使用 Agent 的 Skill 目录。
 
