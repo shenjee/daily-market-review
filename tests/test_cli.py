@@ -316,6 +316,67 @@ class TestCli(unittest.TestCase):
             self.assertFalse(payload["ok"])
             self.assertIn("limit_up_reasons", payload["error"]["message"])
 
+    def test_get_reports_db_unavailable_when_path_cannot_open(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "not_a_database"
+            db_path.mkdir()
+            buffer = io.StringIO()
+            with patch("sys.stdout", buffer):
+                rc = cli.main(["--db", str(db_path), "get", "--date", "2026-08-21"])
+            self.assertEqual(rc, 1)
+            payload = json.loads(buffer.getvalue())
+            self.assertFalse(payload["ok"])
+            self.assertEqual(payload["error"]["code"], "DB_UNAVAILABLE")
+            self.assertIn("状态未知", payload["error"]["message"])
+
+    def test_get_reports_db_unavailable_when_wal_directory_not_writable(self) -> None:
+        import os
+
+        from marketreview.sqlite_schema import init_db
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_dir = Path(tmp) / "waldir"
+            db_dir.mkdir()
+            db_path = db_dir / "market_review.sqlite3"
+            conn = init_db(db_path)
+            conn.close()
+            os.chmod(db_dir, 0o555)
+            try:
+                buffer = io.StringIO()
+                with patch("sys.stdout", buffer):
+                    rc = cli.main(["--db", str(db_path), "get", "--date", "2026-08-21"])
+                self.assertEqual(rc, 1)
+                payload = json.loads(buffer.getvalue())
+                self.assertFalse(payload["ok"])
+                self.assertEqual(payload["error"]["code"], "DB_UNAVAILABLE")
+                self.assertIn("readonly", payload["error"]["message"].lower())
+            finally:
+                os.chmod(db_dir, 0o755)
+
+    def test_get_reports_db_unavailable_when_sqlite_file_is_readonly(self) -> None:
+        import os
+        import sqlite3
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "readonly.sqlite3"
+            conn = sqlite3.connect(db_path)
+            conn.execute("CREATE TABLE t(x INTEGER)")
+            conn.commit()
+            conn.close()
+            os.chmod(db_path, 0o444)
+            try:
+                buffer = io.StringIO()
+                with patch("sys.stdout", buffer):
+                    rc = cli.main(["--db", str(db_path), "get", "--date", "2026-08-21"])
+                self.assertEqual(rc, 1)
+                payload = json.loads(buffer.getvalue())
+                self.assertFalse(payload["ok"])
+                self.assertEqual(payload["error"]["code"], "DB_UNAVAILABLE")
+                self.assertNotEqual(payload["error"]["code"], "SQLITE_JOURNAL_MODE")
+                self.assertIn("readonly", payload["error"]["message"].lower())
+            finally:
+                os.chmod(db_path, 0o644)
+
 
 if __name__ == "__main__":
     unittest.main()

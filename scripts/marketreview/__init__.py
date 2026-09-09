@@ -1,7 +1,7 @@
 """Daily market review persistence package."""
 
 from .calendar import CalendarUnavailableError, TradingCalendar
-from .errors import InvalidFieldValueError, MarketReviewError
+from .errors import DatabaseUnavailableError, InvalidFieldValueError, MarketReviewError
 from .paths import default_market_review_db_path, resolve_db_path
 from .repository import MarketReviewRepository
 from .schema import (
@@ -21,6 +21,7 @@ __all__ = [
     "ATOMIC_FIELD_NAMES",
     "CalendarUnavailableError",
     "DailyMarketReviewAtoms",
+    "DatabaseUnavailableError",
     "InvalidFieldValueError",
     "LadderView",
     "MarketReviewError",

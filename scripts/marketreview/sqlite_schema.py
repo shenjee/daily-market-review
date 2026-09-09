@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Union
 
 from .db import review_transaction
-from .errors import MarketReviewError
+from .errors import DatabaseUnavailableError, MarketReviewError
 from .paths import ensure_db_parent_dir
 
 PathLike = Union[str, Path, sqlite3.Connection]
@@ -178,16 +178,65 @@ def _require_foreign_keys(conn: sqlite3.Connection) -> None:
     )
 
 
-def configure_connection(conn: sqlite3.Connection) -> sqlite3.Connection:
+_ACCESS_ERROR_MARKERS: tuple[str, ...] = (
+    "unable to open",
+    "readonly",
+    "read-only",
+    "read only",
+    "permission denied",
+    "disk i/o",
+)
+
+
+def _is_access_error(exc: BaseException) -> bool:
+    if isinstance(exc, OSError):
+        return True
+    if isinstance(exc, sqlite3.OperationalError):
+        lowered = str(exc).lower()
+        return any(marker in lowered for marker in _ACCESS_ERROR_MARKERS)
+    return False
+
+
+def _database_unavailable(
+    path: Path | str,
+    exc: BaseException,
+) -> DatabaseUnavailableError | None:
+    if _is_access_error(exc):
+        return DatabaseUnavailableError(f"{path}: {exc}")
+    return None
+
+
+def _raise_if_unavailable(path: Path | str, exc: BaseException) -> None:
+    unavailable = _database_unavailable(path, exc)
+    if unavailable is not None:
+        raise unavailable from exc
+
+
+def configure_connection(
+    conn: sqlite3.Connection,
+    *,
+    db_path: Path | str | None = None,
+) -> sqlite3.Connection:
+    path_label = str(db_path) if db_path is not None else "<connection>"
     conn.row_factory = sqlite3.Row
+    access_error: BaseException | None = None
     try:
         conn.execute("PRAGMA journal_mode=WAL")
-    except sqlite3.OperationalError:
-        pass
-    conn.execute("PRAGMA busy_timeout=5000")
-    conn.execute("PRAGMA foreign_keys=ON")
-    _require_journal_mode(conn)
-    _require_foreign_keys(conn)
+    except sqlite3.OperationalError as exc:
+        if _is_access_error(exc):
+            access_error = exc
+    try:
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA foreign_keys=ON")
+        _require_journal_mode(conn)
+        _require_foreign_keys(conn)
+    except sqlite3.OperationalError as exc:
+        _raise_if_unavailable(path_label, exc)
+        raise
+    except MarketReviewError:
+        if access_error is not None:
+            raise DatabaseUnavailableError(f"{path_label}: {access_error}") from access_error
+        raise
     return conn
 
 
@@ -195,15 +244,43 @@ def connect(db_path: PathLike) -> sqlite3.Connection:
     if isinstance(db_path, sqlite3.Connection):
         return configure_connection(db_path)
     path = Path(db_path)
-    if str(path) != ":memory:":
-        ensure_db_parent_dir(path)
-    conn = sqlite3.connect(path)
-    return configure_connection(conn)
+    conn: sqlite3.Connection | None = None
+    try:
+        if str(path) != ":memory:":
+            ensure_db_parent_dir(path)
+        conn = sqlite3.connect(path)
+        return configure_connection(conn, db_path=path)
+    except (OSError, sqlite3.OperationalError) as exc:
+        if conn is not None:
+            conn.close()
+        _raise_if_unavailable(path, exc)
+        raise
+    except DatabaseUnavailableError:
+        if conn is not None:
+            conn.close()
+        raise
 
 
 def init_db(db_path: PathLike) -> sqlite3.Connection:
-    conn = connect(db_path)
-    with review_transaction(conn):
-        for statement in DDL_STATEMENTS:
-            conn.execute(statement)
+    owns_connection = not isinstance(db_path, sqlite3.Connection)
+    path_label: Path | str
+    if isinstance(db_path, sqlite3.Connection):
+        path_label = "<connection>"
+        conn = connect(db_path)
+    else:
+        path_label = Path(db_path)
+        conn = connect(db_path)
+    try:
+        with review_transaction(conn):
+            for statement in DDL_STATEMENTS:
+                conn.execute(statement)
+    except (OSError, sqlite3.OperationalError) as exc:
+        if owns_connection:
+            conn.close()
+        _raise_if_unavailable(path_label, exc)
+        raise
+    except DatabaseUnavailableError:
+        if owns_connection:
+            conn.close()
+        raise
     return conn
