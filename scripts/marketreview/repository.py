@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import date
-from typing import Any, Mapping, Sequence
+from pathlib import Path
+from typing import Any, Iterator, Mapping, Sequence
 
 from .db import review_transaction
 from .errors import InvalidFieldValueError
@@ -19,6 +21,7 @@ from .schema import (
     PRICE_LIMIT_EVENT_IGNORED_FIELDS,
     REVIEW_SELECT_COLUMNS,
     DailyMarketReviewAtoms,
+    DayRead,
     PriceLimitEventDetailLike,
     PriceLimitEventDetailPatch,
     PriceLimitEventDetailRecord,
@@ -27,6 +30,7 @@ from .schema import (
     PriceLimitEventRecord,
 )
 from .sqlite_schema import PathLike, connect, init_db, utc_now_iso
+from .write_gate import assert_no_open_pending, exclusive_write
 from .validation import (
     normalize_string_list,
     normalize_trade_date,
@@ -269,10 +273,20 @@ def _assemble_detail_records(
 
 
 class MarketReviewRepository:
-    def __init__(self, db_path: PathLike) -> None:
+    def __init__(self, db_path: PathLike, *, state_dir: Path | None = None) -> None:
         self._owns_connection = not isinstance(db_path, sqlite3.Connection)
         self._conn = connect(db_path) if self._owns_connection else db_path
+        self._state_dir = state_dir
         init_db(self._conn)
+
+    @contextmanager
+    def _local_write_guard(self) -> Iterator[None]:
+        if self._state_dir is None:
+            yield
+            return
+        with exclusive_write(self._state_dir):
+            assert_no_open_pending(self._state_dir)
+            yield
 
     def close(self) -> None:
         if self._owns_connection:
@@ -295,10 +309,11 @@ class MarketReviewRepository:
         normalized_fields = {
             key: validate_atomic_field(key, value) for key, value in payload.items()
         }
-        with review_transaction(self._conn):
-            self._ensure_review_row(normalized_date)
+        now = utc_now_iso()
+        with self._local_write_guard(), review_transaction(self._conn):
+            self._ensure_review_row(normalized_date, now=now)
             self._apply_field_patch(normalized_date, normalized_fields)
-            self._touch_review(normalized_date)
+            self._touch_review(normalized_date, now=now)
 
     def get_review(self, trade_date: str | date) -> DailyMarketReviewAtoms | None:
         normalized_date = normalize_trade_date(trade_date)
@@ -326,7 +341,7 @@ class MarketReviewRepository:
 
     def delete_review(self, trade_date: str | date) -> None:
         normalized_date = normalize_trade_date(trade_date)
-        with review_transaction(self._conn):
+        with self._local_write_guard(), review_transaction(self._conn):
             self._conn.execute(
                 "DELETE FROM daily_market_review WHERE trade_date = ?",
                 (normalized_date,),
@@ -363,7 +378,7 @@ class MarketReviewRepository:
         records = [_normalize_event(normalized_date, event) for event in events]
         _reject_duplicate_event_identities(records)
         now = utc_now_iso()
-        with review_transaction(self._conn):
+        with self._local_write_guard(), review_transaction(self._conn):
             for record in records:
                 self._upsert_event(record, now=now)
 
@@ -405,7 +420,7 @@ class MarketReviewRepository:
         patches = [_normalize_detail_patch(detail) for detail in details]
         _reject_duplicate_detail_identities(patches)
         now = utc_now_iso()
-        with review_transaction(self._conn):
+        with self._local_write_guard(), review_transaction(self._conn):
             for patch in patches:
                 self._apply_detail_patch(normalized_date, patch, now=now)
 
@@ -448,7 +463,7 @@ class MarketReviewRepository:
 
     def delete_price_limit_events(self, trade_date: str | date) -> None:
         normalized_date = normalize_trade_date(trade_date)
-        with review_transaction(self._conn):
+        with self._local_write_guard(), review_transaction(self._conn):
             self._conn.execute(
                 "DELETE FROM daily_price_limit_event WHERE trade_date = ?",
                 (normalized_date,),
@@ -462,7 +477,7 @@ class MarketReviewRepository:
         direction: str,
     ) -> None:
         normalized_date = normalize_trade_date(trade_date)
-        with review_transaction(self._conn):
+        with self._local_write_guard(), review_transaction(self._conn):
             self._delete_event_row(
                 normalized_date,
                 _require_str("market", market),
@@ -493,7 +508,7 @@ class MarketReviewRepository:
                 "方向未变化时请使用 save_price_limit_events，不要调用方向替换"
             )
         now = utc_now_iso()
-        with review_transaction(self._conn):
+        with self._local_write_guard(), review_transaction(self._conn):
             if not self._event_exists(
                 normalized_date,
                 market_value,
@@ -536,6 +551,23 @@ class MarketReviewRepository:
                     now=now,
                 )
 
+    def read_day(
+        self,
+        trade_date: str | date,
+        previous_trade_date: str | date | None,
+    ) -> DayRead:
+        normalized_date = normalize_trade_date(trade_date)
+        previous = (
+            None if previous_trade_date is None else normalize_trade_date(previous_trade_date)
+        )
+        return DayRead(
+            trade_date=normalized_date,
+            review=self.get_review(normalized_date),
+            events=self.get_price_limit_events(normalized_date),
+            details=self.get_price_limit_event_details(normalized_date),
+            previous_events=[] if previous is None else self.get_price_limit_events(previous),
+        )
+
     def _delete_event_row(
         self,
         trade_date: str,
@@ -551,8 +583,7 @@ class MarketReviewRepository:
             (trade_date, market, code, direction),
         )
 
-    def _ensure_review_row(self, trade_date: str) -> None:
-        now = utc_now_iso()
+    def _ensure_review_row(self, trade_date: str, *, now: str) -> None:
         self._conn.execute(
             """
             INSERT INTO daily_market_review (trade_date, created_at, updated_at)
@@ -571,10 +602,10 @@ class MarketReviewRepository:
             values,
         )
 
-    def _touch_review(self, trade_date: str) -> None:
+    def _touch_review(self, trade_date: str, *, now: str) -> None:
         self._conn.execute(
             "UPDATE daily_market_review SET updated_at = ? WHERE trade_date = ?",
-            (utc_now_iso(), trade_date),
+            (now, trade_date),
         )
 
     def _upsert_event(self, record: PriceLimitEventRecord, *, now: str) -> None:

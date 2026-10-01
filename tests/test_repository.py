@@ -155,6 +155,21 @@ class TestMarketReviewRepository(unittest.TestCase):
         self.assertEqual(row[0], "2026-08-21T00:00:00+00:00")
         self.assertEqual(row[1], "2026-08-21T01:00:00+00:00")
 
+    def test_save_review_uses_one_injected_timestamp(self) -> None:
+        repository_module = sys.modules["marketreview.repository"]
+        with patch.object(repository_module, "utc_now_iso", return_value="2026-08-21T00:00:00+00:00"):
+            self.repo.save_review("2026-08-21", fields={"pe_sh": 17.0})
+        created = self.conn.execute(
+            "SELECT created_at, updated_at FROM daily_market_review WHERE trade_date = '2026-08-21'"
+        ).fetchone()
+        self.assertEqual(tuple(created), ("2026-08-21T00:00:00+00:00", "2026-08-21T00:00:00+00:00"))
+        with patch.object(repository_module, "utc_now_iso", return_value="2026-08-21T01:00:00+00:00"):
+            self.repo.save_review("2026-08-21", fields={"pe_sh": 18.0})
+        updated = self.conn.execute(
+            "SELECT created_at, updated_at, pe_sh FROM daily_market_review WHERE trade_date = '2026-08-21'"
+        ).fetchone()
+        self.assertEqual(tuple(updated), ("2026-08-21T00:00:00+00:00", "2026-08-21T01:00:00+00:00", 18.0))
+
 
 class TestSchemaInit(unittest.TestCase):
     def test_init_db_creates_review_event_and_extension_tables(self) -> None:

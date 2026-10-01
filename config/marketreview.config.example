@@ -1,0 +1,26 @@
+# 安装 Skill / 克隆仓库后，把本文件复制到本机（仅当目标尚不存在）：
+#   mkdir -p ~/.marketreview
+#   [ -e ~/.marketreview/config ] || cp <skill-dir>/config/marketreview.config.example ~/.marketreview/config
+#   [ -e ~/.marketreview/supabase.secret ] || cp <skill-dir>/config/supabase.secret.example ~/.marketreview/supabase.secret
+#   chmod 600 ~/.marketreview/supabase.secret
+# 已有 config 或 supabase.secret 时不要覆盖，对照本模板手工补字段。
+# 再按控制台 Project Settings → API Keys 自行填写。
+# 完整说明见 README「云端配置模板」与 SKILL.md「云端配置」。
+# 不要把填好的文件提交进 Git、打进发布包，或贴到日志 / Issue。
+
+# backend 只能是 sqlite 或 supabase。
+# 正式切换（#10）前省略或保持 sqlite；切换后改为 supabase。
+backend=sqlite
+
+# 项目 URL（控制台 Project URL），不含密钥。
+supabase_url=https://PROJECT_REF.supabase.co
+
+# Publishable key（sb_publishable_...；旧名 anon 亦可）。
+# 低权限，可写在本文件；日常写 RPC 仍用 Secret，本字段供鉴权拒绝实测等使用。
+supabase_publishable_key=sb_publishable_REPLACE_ME
+
+# Secret Key 不要写在这个文件里。
+# 另建 ~/.marketreview/supabase.secret：单行 sb_secret_...（或旧名 service_role），权限 600。
+# 可参考同目录 supabase.secret.example。
+# 兼容：仅当 supabase.secret 不存在时，可读 ~/.marketreview/supabase.config 里的 SUPABASE_SECRET_KEY；
+# 文件存在但内容无效时直接报错，不回退旧密钥。

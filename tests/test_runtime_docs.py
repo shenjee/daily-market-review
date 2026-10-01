@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -46,6 +48,13 @@ REQUIRED_BEHAVIOR_MARKERS = (
     "不触发",
 )
 
+RELEASE_TREE_MARKERS = (
+    "├── contracts/",
+    "│   └── supabase_rpc_v1.json",
+    "├── sql/",
+    "│   └── migrations/",
+)
+
 
 def _runtime_markdown_files() -> list[Path]:
     files = [SKILL_ROOT / "SKILL.md", SKILL_ROOT / "README.md"]
@@ -75,6 +84,47 @@ class TestRuntimeDocsIsolation(unittest.TestCase):
         text = (SKILL_ROOT / "references" / "Skill行为说明.md").read_text(encoding="utf-8")
         missing = [marker for marker in REQUIRED_BEHAVIOR_MARKERS if marker not in text]
         self.assertEqual(missing, [], f"Skill行为说明.md 缺少验收所需段落: {missing}")
+
+    def test_release_package_lists_backup_runtime_dependencies(self) -> None:
+        text = (SKILL_ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+        missing = [marker for marker in RELEASE_TREE_MARKERS if marker not in text]
+        self.assertEqual(missing, [], f"发布清单缺少备份依赖: {missing}")
+
+    def test_simulated_release_tree_exposes_backup_defaults(self) -> None:
+        # 按 CONTRIBUTING 清单搭隔离树，确认 pg_backup 默认合同/迁移路径可解析。
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw) / "daily-market-review"
+            root.mkdir(parents=True)
+            for name in ("SKILL.md", "README.md", "LICENSE"):
+                (root / name).write_text("x\n", encoding="utf-8")
+            for relative in (
+                "config/marketreview.config.example",
+                "config/supabase.secret.example",
+                "contracts/supabase_rpc_v1.json",
+                "sql/migrations/0001_marketreview_v1.sql",
+                "assets/.keep",
+                "references/.keep",
+                "scripts/pg_backup.py",
+                "scripts/marketreview/pg_backup.py",
+            ):
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if relative.endswith("supabase_rpc_v1.json"):
+                    shutil.copy2(SKILL_ROOT / relative, path)
+                elif relative.endswith(".sql"):
+                    path.write_text("-- stub\n", encoding="utf-8")
+                else:
+                    path.write_text("# stub\n", encoding="utf-8")
+            self.assertTrue((root / "contracts" / "supabase_rpc_v1.json").is_file())
+            self.assertTrue((root / "sql" / "migrations" / "0001_marketreview_v1.sql").is_file())
+            payload = (root / "contracts" / "supabase_rpc_v1.json").read_text(encoding="utf-8")
+            self.assertIn("marketreview_probe", payload)
+            # Resolve the same way scripts/marketreview/pg_backup.py does: parents[2] from that file.
+            module_path = root / "scripts" / "marketreview" / "pg_backup.py"
+            package_root = module_path.resolve().parents[2]
+            self.assertEqual(package_root, root.resolve())
+            self.assertTrue((package_root / "contracts" / "supabase_rpc_v1.json").is_file())
+            self.assertTrue((package_root / "sql" / "migrations").is_dir())
 
 
 if __name__ == "__main__":

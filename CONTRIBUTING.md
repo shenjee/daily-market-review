@@ -11,6 +11,9 @@
 
 [V2 每日梯队开发实现](docs/V2每日梯队开发实现.md) 是已落地的历史实现规格，不作为现行产品合同。
 
+[Supabase 云端后端设计](docs/Supabase云端后端设计.md) 是已选定的云端存储方向；目标包括两机本地上传合并、云端全量下载、默认 Supabase 与显式 SQLite。正式切换前日常默认仍为 SQLite。本机云端配置模板见 `config/*.example`，填写说明见 README「云端配置模板」与设计文档第 4 节；不要把填好的凭证提交进仓库。
+
+
 ## 获取源码
 
 ```bash
@@ -60,12 +63,20 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 daily-market-review/
 ├── SKILL.md
 ├── README.md
+├── LICENSE
+├── config/
+│   ├── marketreview.config.example
+│   └── supabase.secret.example
+├── contracts/
+│   └── supabase_rpc_v1.json
+├── sql/
+│   └── migrations/
 ├── scripts/
 ├── assets/
 └── references/
 ```
 
-不要把 `.git/`、`tests/`、`__pycache__/`、本地数据库、编辑器配置或其他开发产物放入版本包。公开分发时，发布包中应包含 `LICENSE`。
+`config/` 只放未填写的示例模板，供用户复制到 `~/.marketreview/` 后自行填写。`contracts/` 与 `sql/migrations/` 是备份 / 恢复 / 核验工具的运行依赖（函数合同与迁移副本），必须打进版本包。不要把 `.git/`、`tests/`、`__pycache__/`、本地数据库、已填写的凭证、编辑器配置或其他开发产物放入版本包。
 
 ## 发布检查清单
 
@@ -76,4 +87,4 @@ daily-market-review/
 3. 确认运行时说明文件不含开发文档目录字面量（由 `tests/test_runtime_docs.py` 覆盖；也可手动扫描 `SKILL.md`、`README.md` 和 `references/`）。
 4. 按上述目录结构生成 `daily-market-review-vX.Y.Z.zip`。
 5. 创建 GitHub Release，上传版本包（不要依赖 GitHub 自动生成的 Source code 压缩包）。
-6. 用解压后的 ZIP 独立安装测试一次，确认不依赖仓库中的额外文件（如 `tests/`）。
+6. 用解压后的 ZIP 独立安装测试一次，确认不依赖仓库中的额外文件（如 `tests/`）；并确认 `scripts/pg_backup.py` 在默认路径下能读到包内 `contracts/` 与 `sql/migrations/`（可用 `--help` / 合同文件存在性检查，不必连真实云端）。

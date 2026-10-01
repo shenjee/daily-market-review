@@ -1,0 +1,310 @@
+{
+  "format_version": 1,
+  "schema_version": 1,
+  "status": "frozen",
+  "sources": [
+    "docs/Supabase云端后端设计.md#7",
+    "docs/数据库设计.md#7"
+  ],
+  "runtime": {
+    "daily_transport": "HTTPS POST /rest/v1/rpc/{function_name}",
+    "body_wrapper": "p_request",
+    "auth_header": "apikey",
+    "credentials_locations_forbidden": ["repository", "logs", "ci", "fixtures", "issue_comments"],
+    "ddl_executor": "explicit admin connection",
+    "daily_cli_runs_ddl": false
+  },
+  "comparison": {
+    "units": [
+      {
+        "group_kind": "review",
+        "group_key": ["trade_date"],
+        "members": ["daily_market_review"]
+      },
+      {
+        "group_kind": "event",
+        "group_key": ["trade_date", "market", "code"],
+        "members": [
+          "all directions of daily_price_limit_event",
+          "daily_price_limit_event_detail",
+          "ordered daily_price_limit_event_sector",
+          "ordered daily_price_limit_event_reason"
+        ]
+      }
+    ],
+    "primary_keys_unchanged": true,
+    "review_event_cascade": false,
+    "business_equality": {
+      "ignores": ["created_at", "updated_at"],
+      "float": {"function": "math.isclose", "rel_tol": 1e-12, "abs_tol": 1e-9},
+      "strict": ["existence", "identity", "null", "detail_existence", "list_order"]
+    },
+    "digest_role": "snapshot_integrity_only",
+    "authorization_recheck": {
+      "digest_checks_saved_snapshot_bytes": true,
+      "business_fields": "float_tolerance",
+      "strict": ["existence", "baseline_presence", "identity", "null", "detail_existence", "list_order", "created_at", "updated_at"],
+      "unrelated_revision_growth_invalidates": false
+    },
+    "missing_baseline_means": "no_baseline",
+    "missing_baseline_does_not_mean": "confirmed_absent",
+    "stop_not_first_join": [
+      "baseline_corrupt",
+      "project_or_ledger_identity_mismatch",
+      "independent_copy_shares_ledger_identity"
+    ]
+  },
+  "sync_commit": {
+    "function": "marketreview_sync_commit",
+    "empty_group_set": "do_not_call_write_rpc",
+    "server_rejects_empty_groups": "EMPTY_COMMIT",
+    "over_limit": {"max_request_bytes": 8388608, "behavior": "fail_entire_request", "silent_split": false},
+    "atomicity": "one transaction; any failure rolls back the selected set",
+    "committable": ["auto_merge", "adopt_local", "explicit_cloud_delete"],
+    "excluded_until_chosen": ["unresolved_conflict", "unresolved_local_delete"],
+    "excluded_groups_do_not_block_other_groups": true,
+    "exists_true": "write the whole group and keep source created_at/updated_at",
+    "exists_false": {
+      "paths": ["local_delete_choose_delete_on_cloud", "conflict_adopt_local_when_local_absent"],
+      "writes_business_rows": false,
+      "constructs_timestamps": false,
+      "same_transaction": ["delete", "history", "revision", "result_payload"],
+      "baseline_after_success": "confirmed_absent"
+    },
+    "idempotency": {
+      "same_operation_id_and_digest": "return stored result_payload before checking expected_revision",
+      "same_operation_id_different_digest": "OPERATION_DIGEST_MISMATCH",
+      "operation_not_found_is_not_proof_of_rollback": true
+    }
+  },
+  "sync_report": {
+    "completed": "no unfinished item",
+    "partial": "confirmed success or same-content mixed with any pending class",
+    "needs_resolution": "only pending items",
+    "failed": "commit failed",
+    "unknown": "result not confirmed",
+    "pending_classes": {
+      "download": {
+        "when": ["cloud_ahead", "valid_keep_cloud"],
+        "requires_new_choice": false,
+        "must_explain_reason": true
+      },
+      "conflict": {
+        "options": ["keep_cloud", "adopt_local"],
+        "adopt_local_when_local_absent": "must say this deletes the cloud group"
+      },
+      "local_delete": {
+        "options": ["restore_cloud_to_local", "delete_on_cloud"]
+      }
+    },
+    "must_not_label_conflict_or_local_delete_as_download": true,
+    "no_upload_baseline": {
+      "same_content": "may confirm a new baseline after the full snapshot shows the local group unchanged",
+      "cloud_ahead": "keep the previous baseline; do not create one when absent",
+      "authorized_keep_cloud": "keep the previous baseline; do not create one when absent"
+    }
+  },
+  "pull": {
+    "download_without_choice": [
+      "baseline_and_cloud_only_change_including_cloud_delete",
+      "no_baseline_cloud_only_insert"
+    ],
+    "blocks_entire_pull_unless_group_has_valid_keep_cloud": [
+      "local_change",
+      "local_delete_pending",
+      "conflict",
+      "first_join_local_only"
+    ],
+    "one_unauthorized_blocker": "write no business rows, advance no baseline, consume no authorization"
+  },
+  "upgrade": {
+    "records_history_only_after_upgrade": true,
+    "must_not_backfill_delete_history_for_rows_absent_before_upgrade": true,
+    "reason": "a fabricated delete would block a first-join local-only group"
+  },
+  "resurrection_block": {
+    "applies_to": "first join, local group present, cloud group absent, no trusted baseline",
+    "history_row_blocks_when": {
+      "change_kind_in": ["delete", "direction_replace"],
+      "or_after_exists": false
+    }
+  },
+  "errors": {
+    "application_sqlstate": "P0001",
+    "application_code_field": "hint",
+    "message_prefix": "[CODE]",
+    "codes": [
+      "SCHEMA_VERSION_MISMATCH",
+      "INVALID_REQUEST",
+      "UNKNOWN_FIELD",
+      "INVALID_TYPE",
+      "DUPLICATE_IDENTITY",
+      "PARENT_EVENT_MISSING",
+      "REPLACE_SOURCE_MISSING",
+      "REPLACE_TARGET_EXISTS",
+      "REVISION_CONFLICT",
+      "OPERATION_DIGEST_MISMATCH",
+      "OPERATION_NOT_FOUND",
+      "EMPTY_COMMIT",
+      "REQUEST_TOO_LARGE",
+      "LIST_NULL"
+    ],
+    "permission_denied_sqlstate": "42501"
+  },
+  "functions": [
+    "marketreview_probe",
+    "marketreview_get_day",
+    "marketreview_list_reviews",
+    "marketreview_list_trade_dates",
+    "marketreview_list_events",
+    "marketreview_list_event_details",
+    "marketreview_replace_direction_preimage",
+    "marketreview_save_review",
+    "marketreview_save_events",
+    "marketreview_save_event_details",
+    "marketreview_delete_event",
+    "marketreview_replace_direction",
+    "marketreview_delete_review",
+    "marketreview_delete_price_limit_events",
+    "marketreview_sync_snapshot",
+    "marketreview_sync_precheck",
+    "marketreview_sync_commit",
+    "marketreview_sync_result"
+  ],
+  "validation": {
+    "missing_or_null_key": "reject",
+    "sql_null_comparison_must_not_skip_rejection": true
+  },
+  "rpcs": {
+    "marketreview_probe": {
+      "request": {"required": {"schema_version": "integer"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "complete": "boolean", "revision": "integer", "ledger_key": "string"}},
+      "errors": [
+        {"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] schema_version 必须为整数"},
+        {"code": "SCHEMA_VERSION_MISMATCH", "message": "[SCHEMA_VERSION_MISMATCH] schema 版本不一致"}
+      ]
+    },
+    "marketreview_get_day": {
+      "request": {"required": {"schema_version": "integer", "trade_date": "date", "previous_trade_date": "date"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "complete": "boolean", "trade_date": "date", "previous_trade_date": "date", "review": "object|null", "events": "array", "details": "array", "sectors": "array", "reasons": "array", "previous_events": "array", "counts": "object"}},
+      "errors": [
+        {"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] schema_version 必须为整数"},
+        {"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] previous_trade_date 必须为字符串"}
+      ]
+    },
+    "marketreview_list_reviews": {
+      "request": {"required": {"schema_version": "integer"}, "optional": {"start_date": "date", "end_date": "date"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "complete": "boolean", "reviews": "array", "counts": "object"}},
+      "errors": [{"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] schema_version 必须为整数"}]
+    },
+    "marketreview_list_trade_dates": {
+      "request": {"required": {"schema_version": "integer"}, "optional": {"start_date": "date", "end_date": "date"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "complete": "boolean", "trade_dates": "array", "counts": "object"}},
+      "errors": [{"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] schema_version 必须为整数"}]
+    },
+    "marketreview_list_events": {
+      "request": {"required": {"schema_version": "integer"}, "optional": {"start_date": "date", "end_date": "date"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "complete": "boolean", "events": "array", "counts": "object"}},
+      "errors": [{"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] schema_version 必须为整数"}]
+    },
+    "marketreview_list_event_details": {
+      "request": {"required": {"schema_version": "integer"}, "optional": {"start_date": "date", "end_date": "date"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "complete": "boolean", "details": "array", "sectors": "array", "reasons": "array", "events": "array", "counts": "object"}},
+      "list_rules": ["parent_event_required", "position_contiguous_from_zero", "list_business_key_unique"],
+      "errors": [{"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] schema_version 必须为整数"}]
+    },
+    "marketreview_replace_direction_preimage": {
+      "request": {"required": {"schema_version": "integer", "trade_date": "date", "market": "string", "code": "string", "old_direction": "string", "new_direction": "string"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "complete": "boolean", "revision": "integer", "trade_date": "date", "market": "string", "code": "string", "old_direction": "string", "new_direction": "string", "old": "direction_state", "new": "direction_state"}},
+      "direction_state": {"present": ["exists", "event", "detail_exists", "detail", "sectors", "reasons"], "absent": {"exists": false, "event": null, "detail_exists": false, "detail": null, "sectors": [], "reasons": []}},
+      "returns_both_states_when_source_is_absent": true,
+      "errors": [
+        {"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] schema_version 必须为整数"},
+        {"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] 方向未变化"}
+      ]
+    },
+    "marketreview_save_review": {
+      "request": {"required": {"schema_version": "integer", "trade_date": "date", "batch_time": "timestamp", "fields": "object"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "complete": "boolean", "noop": "boolean", "revision": "integer"}},
+      "errors": [
+        {"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] schema_version 必须为整数"},
+        {"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] fields 必须为对象"},
+        {"code": "SCHEMA_VERSION_MISMATCH", "message": "[SCHEMA_VERSION_MISMATCH] schema 版本不一致"}
+      ]
+    },
+    "marketreview_save_events": {
+      "request": {"required": {"schema_version": "integer", "trade_date": "date", "batch_time": "timestamp", "events": "array"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "complete": "boolean", "noop": "boolean", "revision": "integer"}},
+      "errors": [
+        {"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] events 必须为数组"},
+        {"code": "DUPLICATE_IDENTITY", "message": "[DUPLICATE_IDENTITY] 同一批写入存在重复事件"}
+      ]
+    },
+    "marketreview_save_event_details": {
+      "request": {"required": {"schema_version": "integer", "trade_date": "date", "batch_time": "timestamp", "details": "array"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "complete": "boolean", "noop": "boolean", "revision": "integer"}},
+      "errors": [
+        {"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] details 必须为数组"},
+        {"code": "PARENT_EVENT_MISSING", "message": "[PARENT_EVENT_MISSING] 父事件不存在"},
+        {"code": "LIST_NULL", "message": "[LIST_NULL] sectors 不能为 null"}
+      ]
+    },
+    "marketreview_delete_event": {
+      "request": {"required": {"schema_version": "integer", "trade_date": "date", "batch_time": "timestamp", "market": "string", "code": "string", "direction": "string"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "complete": "boolean", "noop": "boolean", "revision": "integer"}},
+      "errors": [{"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] schema_version 必须为整数"}]
+    },
+    "marketreview_replace_direction": {
+      "request": {"required": {"schema_version": "integer", "trade_date": "date", "batch_time": "timestamp", "market": "string", "code": "string", "old_direction": "string", "event": "object"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "complete": "boolean", "noop": "boolean", "revision": "integer"}},
+      "errors": [
+        {"code": "REPLACE_SOURCE_MISSING", "message": "[REPLACE_SOURCE_MISSING] 被替换事件不存在"},
+        {"code": "REPLACE_TARGET_EXISTS", "message": "[REPLACE_TARGET_EXISTS] 目标方向已存在"},
+        {"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] 方向未变化"}
+      ]
+    },
+    "marketreview_delete_review": {
+      "request": {"required": {"schema_version": "integer", "trade_date": "date", "batch_time": "timestamp"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "complete": "boolean", "noop": "boolean", "revision": "integer"}},
+      "errors": [{"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] schema_version 必须为整数"}]
+    },
+    "marketreview_delete_price_limit_events": {
+      "request": {"required": {"schema_version": "integer", "trade_date": "date", "batch_time": "timestamp"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "complete": "boolean", "noop": "boolean", "revision": "integer"}},
+      "errors": [{"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] schema_version 必须为整数"}]
+    },
+    "marketreview_sync_snapshot": {
+      "request": {"required": {"schema_version": "integer"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "complete": "boolean", "revision": "integer", "ledger_key": "string", "reviews": "array", "events": "array", "details": "array", "sectors": "array", "reasons": "array", "history": "array", "sync_results": "array", "counts": "object"}},
+      "errors": [{"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] schema_version 必须为整数"}]
+    },
+    "marketreview_sync_precheck": {
+      "request": {"required": {"schema_version": "integer"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "complete": "boolean", "revision": "integer", "ledger_key": "string", "counts": "object"}},
+      "errors": [{"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] schema_version 必须为整数"}]
+    },
+    "marketreview_sync_commit": {
+      "request": {"required": {"schema_version": "integer", "operation_id": "string", "project_id": "string", "ledger_id": "string", "request_digest": "string", "expected_revision": "integer", "groups": "array"}},
+      "group": {
+        "required": {"group_kind": "string", "group_key": "object", "exists": "boolean"},
+        "when_exists_true": {"review": "complete review object and no events", "event": "non-empty events array and no review"},
+        "when_exists_false": "review and events keys absent; no business row and no timestamp is created",
+        "missing_key": "reject_before_delete"
+      },
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "operation_id": "string", "project_id": "string", "ledger_id": "string", "request_digest": "string", "expected_revision": "integer", "committed_revision": "integer", "groups": "array"}},
+      "errors": [
+        {"code": "INVALID_TYPE", "message": "[INVALID_TYPE] exists 必须为布尔值"},
+        {"code": "INVALID_REQUEST", "message": "[INVALID_REQUEST] 存在的事件组至少要有一个方向"},
+        {"code": "EMPTY_COMMIT", "message": "[EMPTY_COMMIT] 空提交集合不写"},
+        {"code": "REVISION_CONFLICT", "message": "[REVISION_CONFLICT] 预期云端版本已变化，整批已回滚"},
+        {"code": "OPERATION_DIGEST_MISMATCH", "message": "[OPERATION_DIGEST_MISMATCH] 同一 operation_id 的摘要不一致"},
+        {"code": "REQUEST_TOO_LARGE", "message": "[REQUEST_TOO_LARGE] 提交超过上限，整次失败"}
+      ]
+    },
+    "marketreview_sync_result": {
+      "request": {"required": {"schema_version": "integer", "operation_id": "string"}},
+      "response": {"required": {"format_version": "integer", "schema_version": "integer", "operation_id": "string", "project_id": "string", "ledger_id": "string", "request_digest": "string", "expected_revision": "integer", "committed_revision": "integer", "groups": "array"}},
+      "errors": [{"code": "OPERATION_NOT_FOUND", "message": "[OPERATION_NOT_FOUND] 未找到提交结果，不能据此推断已回滚"}]
+    }
+  }
+}

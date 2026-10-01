@@ -13,8 +13,25 @@ import _bootstrap  # noqa: F401
 
 import cli
 
+_ISOLATED_STATE = tempfile.TemporaryDirectory()
+
+
+def setUpModule() -> None:
+    _ISOLATED_STATE.__enter__()
+
+
+def tearDownModule() -> None:
+    _ISOLATED_STATE.cleanup()
+
 
 class TestCli(unittest.TestCase):
+    def setUp(self) -> None:
+        self._state_patch = patch(
+            "cli._command_state_dir",
+            lambda: Path(_ISOLATED_STATE.name),
+        )
+        self._state_patch.start()
+        self.addCleanup(self._state_patch.stop)
     def test_get_and_save_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "market_review.sqlite3"
@@ -376,6 +393,29 @@ class TestCli(unittest.TestCase):
                 self.assertIn("readonly", payload["error"]["message"].lower())
             finally:
                 os.chmod(db_path, 0o644)
+
+    def test_supabase_backend_rejects_db_before_opening_sqlite(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "market_review.sqlite3"
+            buffer = io.StringIO()
+            with patch("sys.stdout", buffer):
+                rc = cli.main(
+                    ["--backend", "supabase", "--db", str(db_path), "get", "--date", "2026-08-21"]
+                )
+            self.assertEqual(rc, 1)
+            payload = json.loads(buffer.getvalue())
+            self.assertEqual(payload["error"]["code"], "BACKEND_CONFLICT")
+            self.assertFalse(db_path.exists())
+
+    def test_verify_pending_on_sqlite_does_not_call_cloud(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "market_review.sqlite3"
+            buffer = io.StringIO()
+            with patch("sys.stdout", buffer):
+                rc = cli.main(["--backend", "sqlite", "--db", str(db_path), "verify-pending"])
+            self.assertEqual(rc, 0)
+            payload = json.loads(buffer.getvalue())
+            self.assertEqual(payload["data"]["status"], "sqlite")
 
 
 if __name__ == "__main__":

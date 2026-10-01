@@ -182,6 +182,33 @@ CLI 输出统一为：
 - `is_leader=true` 显示「龙头」，`false` 和 `null` 均留空。
 - `ladder.broken_limit_up`、`opened_limit_down`、`closed_limit_down` 在梯队之后作为独立名单。
 
+## 云端配置（接入 Supabase 时）
+
+日常默认仍为本地 SQLite，可不填云端凭证。接入云端时，由用户把安装目录下的模板复制到本机并自行填写（Agent 不得代写真实密钥进仓库或对话）。**仅在目标尚不存在时创建**；已有文件不要覆盖，对照模板手工补字段：
+
+```bash
+mkdir -p ~/.marketreview
+[ -e ~/.marketreview/config ] || cp "<skill-dir>/config/marketreview.config.example" ~/.marketreview/config
+[ -e ~/.marketreview/supabase.secret ] || cp "<skill-dir>/config/supabase.secret.example" ~/.marketreview/supabase.secret
+chmod 600 ~/.marketreview/supabase.secret
+```
+
+- `~/.marketreview/config`：`backend`、`supabase_url`、`supabase_publishable_key`（Publishable / 旧 anon，低权限）
+- `~/.marketreview/supabase.secret`：Secret Key 单行（`sb_secret_...` / 旧 service_role），权限 600；不要写进 `config`
+- 选用 `supabase` 后端时缺 URL 或 Secret 则报错停止，不回退 SQLite；显式 `--backend sqlite` 不要求云端凭证
+- 仅当 `supabase.secret` 不存在时可回退旧 `supabase.config`；文件存在但无效则报错
+- 填写说明以模板文件注释和 README「云端配置模板」为准
+- 两机同步独立于日常 backend，不改默认配置；需要已填写 URL/Secret：
+
+```bash
+python3 "<skill-dir>/scripts/cli.py" sync push [--source <sqlite>]
+python3 "<skill-dir>/scripts/cli.py" sync pull [--target <sqlite>]
+```
+
+  冲突选择：`--keep-cloud` / `--adopt-local`；本地删除：`--restore-cloud` / `--delete-on-cloud`。组引用形如 `review:2026-08-21` 或 `event:2026-08-21:sh:600519`。不要用日常 save 命令循环搬运数据。
+- 云端库正式备份（管理连接 / 数据库密码，非 Secret）：`python3 "<skill-dir>/scripts/pg_backup.py" backup|restore-blank|verify`；产物在 `~/.marketreview/backups/supabase/`，须含 schema 与 public wrappers。日常默认仍为 SQLite，正式切换前不要改默认后端。
+- 方向替换超时后执行 `verify-pending`；不得在本机待核验未关闭时换机续写
+
 ## 边界
 
 - 写入和显示相互独立
@@ -189,3 +216,4 @@ CLI 输出统一为：
 - 每日梯队、竞价占比和开盘涨幅由 `get` 返回的 `ladder` 生成，不单独入库
 - 来源、网页链接、图片和采集方式不入库
 - 多 Agent 共享 `~/.marketreview/market_review.sqlite3`；SQLite 已启用 WAL、busy timeout 和 foreign keys
+- 云端凭证只存在于本机 `~/.marketreview/` 配置与 Secret 文件，不进仓库、发布包、日志或测试夹具

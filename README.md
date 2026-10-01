@@ -84,6 +84,53 @@ export MARKETREVIEW_HOME="/path/to/marketreview-data"
 
 请定期备份该目录。不要让多个用户账户共用同一个数据目录。
 
+### 云端配置模板（可选）
+
+正式切换到 Supabase 之前，日常仍默认使用本地 SQLite，可不填写云端凭证。
+
+需要接入云端时，把安装目录里的模板复制到本机，再按控制台 Project Settings → API Keys **自行填写**。填好的文件只留在本机，不要提交 Git、打进发布包，或贴到对话 / 日志 / Issue。
+
+**仅在目标文件尚不存在时创建**；已有 `config` 或 `supabase.secret` 时不要覆盖，对照模板手工补字段。
+
+```bash
+mkdir -p ~/.marketreview
+[ -e ~/.marketreview/config ] || cp "<skill-dir>/config/marketreview.config.example" ~/.marketreview/config
+[ -e ~/.marketreview/supabase.secret ] || cp "<skill-dir>/config/supabase.secret.example" ~/.marketreview/supabase.secret
+chmod 600 ~/.marketreview/supabase.secret
+```
+
+将 `<skill-dir>` 换成本机 Skill 安装目录的绝对路径。源码开发时可把仓库根目录当作该路径。
+
+| 项 | 本机位置 | 说明 |
+| --- | --- | --- |
+| 后端选择 | `~/.marketreview/config` 中 `backend` | 只能是 `sqlite` 或 `supabase`；切换前保持 `sqlite` |
+| 项目 URL | 同上 `supabase_url` | 控制台 Project URL，不含密钥 |
+| Publishable | 同上 `supabase_publishable_key` | `sb_publishable_...`（旧名 anon 亦可）；低权限，可写在 config |
+| Secret | `~/.marketreview/supabase.secret` | `sb_secret_...`（旧名 service_role 亦可）；高权限，单独文件、单行、权限 600 |
+
+日常写 RPC 使用 Secret。`backend=sqlite`（或显式 `--backend sqlite`）时不要求云端凭证。使用 `supabase` 时必须已填写 URL 与 Secret；缺配置、鉴权失败或断网会明确报错，**不会**回退本地 SQLite。兼容：仅当 `supabase.secret` **不存在**时，可读 `~/.marketreview/supabase.config` 里的 `SUPABASE_SECRET_KEY`；文件存在但内容无效时直接报错，不回退旧密钥。
+
+### 两机同步（独立于日常 backend）
+
+`sync push` / `sync pull` 不修改日常 `backend` 配置；需要本机已填写 URL 与 Secret。省略 `--source` / `--target` 时按现有本地路径规则解析日常 SQLite。
+
+```bash
+python3 "<skill-dir>/scripts/cli.py" sync push --source ~/.marketreview/market_review.sqlite3
+python3 "<skill-dir>/scripts/cli.py" sync pull --target ~/.marketreview/market_review.sqlite3
+```
+
+冲突或本地删除待处理时，用组引用重复选择（可多次）：
+
+- `--keep-cloud review:2026-08-21`
+- `--adopt-local event:2026-08-21:sh:600519`
+- `--restore-cloud` / `--delete-on-cloud`（本地删除待处理）
+
+方向替换超时后的本机核验：`verify-pending`（过 8s 在途窗口且前像仍一致时才会受控重发）。
+
+### 云端 PostgreSQL 备份（管理连接）
+
+正式备份走数据库密码 + `pg_dump`（Session pooler；不用 transaction pooler，不用 Secret Key）。CLI：`scripts/pg_backup.py`（`backup` / `restore-blank` / `verify`）。成功包写入 `~/.marketreview/backups/supabase/<UTC>/`，含 `marketreview` schema、**`public.marketreview_*` wrappers**、迁移副本与校验清单；不进仓库。恢复须在空白库上核验通过才算有效。当前默认后端仍为 SQLite；切换门槛见设计文档 #10，勿提前改默认。
+
 ## 开发
 
 从源码运行、测试和发布打包说明见 [CONTRIBUTING.md](CONTRIBUTING.md)。

@@ -202,6 +202,15 @@ class LadderView:
     closed_limit_down: list[LadderStock]
 
 
+@dataclass(frozen=True)
+class DayRead:
+    trade_date: str
+    review: "DailyMarketReviewAtoms | None"
+    events: list[PriceLimitEventRecord]
+    details: list[PriceLimitEventDetailRecord]
+    previous_events: list[PriceLimitEventRecord]
+
+
 @dataclass
 class DailyMarketReviewAtoms:
     trade_date: str

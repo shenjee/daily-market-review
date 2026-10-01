@@ -7,6 +7,12 @@ from pathlib import Path
 
 DEFAULT_HOME = Path.home() / ".marketreview"
 DB_FILENAME = "market_review.sqlite3"
+CLOUD_STATE_DIRNAME = "supabase-state"
+
+
+def production_cloud_state_dir() -> Path:
+    """Fixed local gate for cloud writes and sync. Ignores --db and MARKETREVIEW_HOME."""
+    return DEFAULT_HOME / CLOUD_STATE_DIRNAME
 
 
 def default_market_review_db_path() -> Path:
