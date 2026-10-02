@@ -1,5 +1,22 @@
 # Supabase 环境实测记录
 
+## 2026-10-02 合同第 5 项正式收口
+
+未改 `CLOUD_DEFAULT_ENABLED`，未打开生产日常 SQLite，未改云端，未执行正式迁移。
+
+独立最终复审（工作区）已关闭 F1–F3 与既有副本闸门接入；完整 37 项矩阵见 `/private/tmp/daily-market-review-step5-final-reaudit-20261002.md`（SHA-256 `bc07fd007f98821c46a596c41a4106d27a97696bd52b3ede28ee98c020a62d41`），并已记入 [#3](https://github.com/shenjee/daily-market-review/issues/3#issuecomment-5954759122)。
+
+交付版收口条件已齐：
+
+| 条件 | 结果 |
+| --- | --- |
+| 修复提交 | `ec88bec1c392633d9156924e015ef25851088878`（相对审查补丁 8 文件，已上 main） |
+| 含修复的真实 PG CI | [Actions 37021159023](https://github.com/shenjee/daily-market-review/actions/runs/37021159023) success |
+| 隔离 PG17.11 全套 | 216 项通过、无跳过 |
+| 既有副本保护 | `20261002T142740Z_step5_protect_existing`；登记哈希未改 |
+
+合同第 5 项与 #8/#9/#11 现正式收口关闭。下一步为合同第 6 项（#10 正式迁移准备与执行）；默认切换仍属第 7 项。
+
 ## 2026-10-02 合同第 5 项 F3 补全与既有闸门接入
 
 未改 `CLOUD_DEFAULT_ENABLED`，未打开生产日常 SQLite，未改云端，未改写长期登记。复审 `/private/tmp/daily-market-review-step5-reaudit-20261002.md`：F1 代码与 F2 已通过；F3 仍缺内部身份与整数字段；既有两份副本尚未挂入本机闸门。
@@ -8,7 +25,7 @@
 
 既有登记接入本机共享闸门：`python3 scripts/acceptance_migration_register.py --protect-register ~/.marketreview/acceptance-evidence/20261002T093737Z_step5_migration_register/migration_register.json`。登记 SHA-256 仍为 `e54cf0ac54d277045a34d01be8ba0e544d7ac13af6be4a9f5980172c725fbf9d`。M3/M1 一致性副本的原路径、硬链接、符号链接在产品 `~/.marketreview/supabase-state/` 下 pull 准入均为 `TARGET_FORBIDDEN`。证据：`~/.marketreview/acceptance-evidence/20261002T142740Z_step5_protect_existing/`。
 
-隔离 PG17.11 全套测试通过。#8/#9/#11 仍不关闭。
+隔离 PG17.11 全套测试通过。当时 #8/#9/#11 仍不关闭；现已由上方正式收口节关闭。
 
 ## 2026-10-02 合同第 5 项复审缺陷修复
 
@@ -110,7 +127,7 @@ Docker 守护进程未启动。用隔离数据目录 `/tmp/dmr-pg-rpc-v1`、Post
 
 **第 4 项独立复审通过（2026-10-02），[#3](https://github.com/shenjee/daily-market-review/issues/3) 已勾选。** 初审四项缺口关闭。复审记录：`/private/tmp/daily-market-review-step4-reaudit-20261002.md`。
 
-下一步：合同第 5 项 — 按原 #8/#9/#11 验收项逐条收口；这些 issues 尚未整体关闭，#10 未通过。
+下一步：合同第 6 项 — #10 正式迁移准备与执行；#8/#9/#11 已于第 5 项正式收口关闭，#10 未通过。
 
 ---
 
