@@ -8,41 +8,45 @@
 - 准备／JWT：`~/.marketreview/acceptance-evidence/20261001T140926Z_step4_mac_prep/`
 - 真双机：`~/.marketreview/acceptance-evidence/20261002T000200Z_step4_dual_physical/`
 - 暂停／恢复：`~/.marketreview/acceptance-evidence/20261002T073344Z_step4_pause_resume/`
-- 缺口补齐（进行中）：`~/.marketreview/acceptance-evidence/20261002T080000Z_step4_gap_fill/`（脚本就绪后写入）
+- 缺口补齐（开发侧已齐）：`~/.marketreview/acceptance-evidence/20261002T080000Z_step4_gap_fill/`
 
-### 独立审查结论（2026-10-02）
+### 独立审查结论（2026-10-02 初审）
 
-**第 4 项暂不整项通过、不勾选。** 未发现新的产品代码缺陷；缺口为验收证据／场景。详见 `/private/tmp/daily-market-review-step4-audit-20261002.md`。
+**第 4 项当时暂不整项通过。** 未发现新的产品代码缺陷；缺口为验收证据／场景。详见 `/private/tmp/daily-market-review-step4-audit-20261002.md`。
 
-已核验一致：M3 原库一致性备份；JWT 链；暂停／恢复；M3 侧同步原始 reports。
+初审已核验一致：M3 原库一致性备份；JWT 链；暂停／恢复；M3 侧同步原始 reports。
 
-仍阻塞：
-1. **M1 原 SQLite 一致性备份**（合同要求两份原库；不能用演练 `m1.sqlite3` 替代）
-2. **M1 原始报告**（`m1_seed`／`m1_push_*`／`m1_pull*`／`verify_m1` 与第二份备份校验原输出；不得仅用汇总结论）
-3. **双机完整数据比较**（五表、时间、null、列表顺序；现有 `verify-local` 不够）
-4. **真双机未知结果恢复**（提交后丢响应 → 原 `operation_id` 恢复 → revision 不重复推进）
+初审当时仍阻塞（现已由开发侧补齐，见下「缺口补齐交付」）：
+1. M1 原 SQLite 一致性备份
+2. M1 原始报告与第二份备份校验原输出
+3. 双机完整数据比较
+4. 真双机未知结果恢复
 
 ### 已交付（开发侧；审查已部分互核）
 
 | 子项 | 结果 | 审查状态 |
 | --- | --- | --- |
 | M3 原 SQLite 一致性备份 | online backup API → `sqlite_consistency/`；五表 31/3048/1175/1026/590 | 已独立核验通过 |
-| #9 第二份备份打包 | `cloud_backup_for_m1/20261001T133739Z.tar.gz` + `VERIFY_ON_M1.sh` | 传输包正确；**不单独证明 M1 现存放副本** |
-| M1 第二份备份校验 | 用户汇报 12/12 OK，revision=21 | **缺 M1 机器原输出绑定** |
+| #9 第二份备份打包 | `cloud_backup_for_m1/20261001T133739Z.tar.gz` + `VERIFY_ON_M1.sh` | 传输包正确 |
+| M1 第二份备份校验 | Air 原输出 12/12 OK，revision=21 | 开发侧已绑原始输出；待复审 |
 | 真实 Auth JWT | 403/42501 vs 401/PGRST301 | 已独立核验通过 |
-| 真物理双机（重叠／独有／冲突／显式删除／全量 pull） | 哨兵 `2099-10-01`…`04`；cleanup 后 revision=29 | M3 reports 一致；**缺 M1 原 reports；缺全量比较；缺未知结果** |
+| 真物理双机（重叠／独有／冲突／显式删除／全量 pull） | 哨兵 `2099-10-01`…`04`；另有完整五表比较与未知结果演练 | 开发侧证据已齐；待复审 |
 | 暂停／恢复 live | INACTIVE→540；恢复后 revision=29 | 已独立核验通过 |
 
-### 仍待（第 4 项缺口）
+### 缺口补齐交付（开发侧；待独立复审）
 
-见上「仍阻塞」四条。工具：`scripts/acceptance_sqlite_consistency_backup.py`、`scripts/acceptance_step4_gap_fill.py`。证据进行中：`~/.marketreview/acceptance-evidence/20261002T080000Z_step4_gap_fill/`。
+证据：`…/20261002T080000Z_step4_gap_fill/`。
 
-本轮 M3 已补：
-- `snapshots/m3_after_final_pull.json`（五表 + 全组；含 2099-09 样例与演练日后最终态）
-- `reports/unknown_result_m3.json`（丢响应 → `operation_id` 恢复；revision 29→30 后稳定不重复推进；云端 `groups` 完整）
-- `M1_GAP_FILL_RUNBOOK.txt`（待 M1 执行并回传）
+| 缺口 | 证据 | 结果 |
+| --- | --- | --- |
+| M1 原库一致性备份 | `sqlite_consistency_m1/`（Air；1/89/0/0/0；`2026-09-23`） | CHECKSUMS 与 integrity 本机复核 OK |
+| M1 双机原始报告 | `from_m1_dual_physical/` + 并入 `…/20261002T000200Z…/reports/m1_*.json` | Air meta；缺可选 `m1_pull.json` |
+| M1 第二份备份原输出 | `reports/m1_second_backup_verify_raw.txt` | 12/12 OK，revision=21 |
+| 双机完整五表比较 | `snapshots/m3|m1_after_final_pull.json` + `compare_snapshots.json` | groups/tables 哈希一致 |
+| 未知结果恢复 | `unknown_result_m3.json`（29→30）+ `unknown_result_m1.json`（30→31） | 同 operation_id 恢复；稳定 push 不重复推进；哨兵已清 |
+| 哨兵清理 | `cleanup_unknown_sentinel.json` | `2099-10-05/06` 清空；`2099-09-*` 样例仍在；revision=35 |
 
-云端暂留哨兵 `2099-10-05`（revision=30），待 M1 `2099-10-06` 未知结果演练后再 `cleanup-unknown-sentinel`。#8/#9 整体、#10 仍未通过。
+**第 4 项开发侧四条审查缺口已补齐；整项勾选仍待独立审查，不得提前勾选。** #8/#9 整体、#10 仍未通过。
 
 ---
 
