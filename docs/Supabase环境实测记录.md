@@ -12,8 +12,6 @@
 
 同一状态目录里，第二份仍带着原 `ledger_id` 的库在任何 RPC 之前停止（`IDENTITY_MISMATCH`，不按首次接入重建）。只改路径仍用原身份。换一份状态目录（另一台机器只拿走数据库）同样停止。`sync new-identity --source` 在基线可读时换成新身份并清掉安装绑定；基线损坏则身份不变。回归：`tests/test_sync.py` 32 项通过。
 
-把状态目录和数据库一起复制到另一台机器，本地仍看不到「两份同时活着」。这条不靠云端协议补，本轮没有改冻结合同。
-
 ## 2026-10-02 合同第 5 项：#11 同步完整快照 >1000
 
 Docker 守护进程未启动。用隔离数据目录 `/tmp/dmr-pg-rpc-v1`、PostgreSQL **17.11**、端口 55432 跑 `tests/test_pg_rpc_v1.py`（`psql`，无 psycopg）。`test_sync_snapshot_over_1000_is_one_complete_jsonb` 通过：一次 `marketreview_sync_snapshot` 返回 `complete=true`、1201 条事件、代码从 `000001` 到 `001201`、两条原因按 `position` 为「先」「后」，计数与数组长度一致。同文件其余 RPC 测试一并通过。测完已停止该临时实例。这不是线上 Data API 列表容量，也不代替云端再测一遍。
