@@ -19,7 +19,13 @@ from marketreview.errors import MarketReviewError, RemoteStoreError
 from marketreview.repository import MarketReviewRepository
 from marketreview.schema import ATOMIC_FIELD_NAMES, PriceLimitEventInput
 from marketreview.sqlite_schema import connect
-from marketreview.sync_engine import GroupChoice, protect_snapshot, pull_sync, push_sync
+from marketreview.sync_engine import (
+    GroupChoice,
+    assign_new_ledger_identity,
+    protect_snapshot,
+    pull_sync,
+    push_sync,
+)
 from marketreview.sync_groups import parse_group_ref, read_local_groups, same_evidence
 from marketreview.sync_ledger import (
     ensure_sync_schema,
@@ -28,7 +34,7 @@ from marketreview.sync_ledger import (
     has_coverage,
     read_baselines,
 )
-from marketreview.write_gate import read_pending
+from marketreview.write_gate import exclusive_write, read_pending, save_open_pending
 
 
 PROJECT = "project1"
@@ -872,6 +878,168 @@ class TestSyncSafety(SyncCase):
         self.assertEqual(ctx.exception.code, "BASELINE_CORRUPT")
         self.assertNotIn("marketreview_sync_commit", self.cloud.calls)
 
+    def test_structurally_incomplete_baseline_stops_without_rebuild(self) -> None:
+        self.seed_review()
+        report = self.align()
+        conn = connect(self.db)
+        try:
+            conn.execute(
+                """
+                UPDATE sync_baseline
+                SET group_payload = '{}'
+                WHERE project_id = ? AND ledger_id = ?
+                """,
+                (PROJECT, report["ledger_id"]),
+            )
+            conn.commit()
+            with self.assertRaises(MarketReviewError) as ctx:
+                fork_ledger_identity(conn)
+            self.assertEqual(ctx.exception.code, "BASELINE_CORRUPT")
+            self.assertEqual(
+                conn.execute(
+                    "SELECT ledger_id FROM sync_ledger_singleton WHERE id = 1"
+                ).fetchone()[0],
+                report["ledger_id"],
+            )
+            payload = conn.execute(
+                """
+                SELECT group_payload FROM sync_baseline
+                WHERE project_id = ? AND ledger_id = ?
+                """,
+                (PROJECT, report["ledger_id"]),
+            ).fetchone()[0]
+            self.assertEqual(payload, "{}")
+        finally:
+            conn.close()
+        with self.assertRaises(MarketReviewError) as ctx:
+            self.push()
+        self.assertEqual(ctx.exception.code, "BASELINE_CORRUPT")
+        self.assertNotIn("marketreview_sync_commit", self.cloud.calls)
+        self.assertEqual(_ledger_id(self.db), report["ledger_id"])
+
+    def test_mismatched_and_contradictory_baselines_stop(self) -> None:
+        self.seed_review()
+        report = self.align()
+        cases = [
+            (
+                "present",
+                {
+                    "group_kind": "review",
+                    "group_key": {"trade_date": "2099-01-01"},
+                    "exists": True,
+                },
+            ),
+            (
+                "present",
+                {
+                    "group_kind": "review",
+                    "group_key": {"trade_date": DAY},
+                    "exists": True,
+                },
+            ),
+            (
+                "present",
+                {
+                    "group_kind": "review",
+                    "group_key": {"trade_date": DAY},
+                    "exists": False,
+                },
+            ),
+            (
+                "confirmed_absent",
+                {
+                    "group_kind": "review",
+                    "group_key": {"trade_date": DAY},
+                    "exists": True,
+                    "review": {"trade_date": DAY},
+                },
+            ),
+        ]
+        for state, body in cases:
+            conn = connect(self.db)
+            try:
+                conn.execute(
+                    """
+                    UPDATE sync_baseline
+                    SET group_payload = ?, baseline_state = ?
+                    WHERE project_id = ? AND ledger_id = ?
+                    """,
+                    (json.dumps(body, ensure_ascii=False), state, PROJECT, report["ledger_id"]),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            with self.assertRaises(MarketReviewError) as ctx:
+                self.push()
+            self.assertEqual(ctx.exception.code, "BASELINE_CORRUPT")
+            self.assertNotIn("marketreview_sync_commit", self.cloud.calls)
+
+    def test_inner_review_identity_and_integer_types_stop_fork_and_push(self) -> None:
+        self.seed_review()
+        report = self.align()
+        conn = connect(self.db)
+        try:
+            raw = conn.execute(
+                """
+                SELECT group_payload FROM sync_baseline
+                WHERE project_id = ? AND ledger_id = ?
+                """,
+                (PROJECT, report["ledger_id"]),
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        original = json.loads(raw)
+        date_mismatch = json.loads(raw)
+        date_mismatch["review"]["trade_date"] = "2099-01-01"
+        string_count = json.loads(raw)
+        string_count["review"]["advancing_count"] = "not-an-int"
+        bool_count = json.loads(raw)
+        bool_count["review"]["advancing_count"] = True
+        for body in (date_mismatch, string_count, bool_count):
+            conn = connect(self.db)
+            try:
+                conn.execute(
+                    """
+                    UPDATE sync_baseline
+                    SET group_payload = ?
+                    WHERE project_id = ? AND ledger_id = ?
+                    """,
+                    (json.dumps(body, ensure_ascii=False), PROJECT, report["ledger_id"]),
+                )
+                conn.commit()
+                with self.assertRaises(MarketReviewError) as ctx:
+                    fork_ledger_identity(conn)
+                self.assertEqual(ctx.exception.code, "BASELINE_CORRUPT")
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT ledger_id FROM sync_ledger_singleton WHERE id = 1"
+                    ).fetchone()[0],
+                    report["ledger_id"],
+                )
+            finally:
+                conn.close()
+            with self.assertRaises(MarketReviewError) as ctx:
+                self.push()
+            self.assertEqual(ctx.exception.code, "BASELINE_CORRUPT")
+            self.assertNotIn("marketreview_sync_commit", self.cloud.calls)
+            self.assertEqual(_ledger_id(self.db), report["ledger_id"])
+        conn = connect(self.db)
+        try:
+            conn.execute(
+                """
+                UPDATE sync_baseline
+                SET group_payload = ?
+                WHERE project_id = ? AND ledger_id = ?
+                """,
+                (json.dumps(original, ensure_ascii=False), PROJECT, report["ledger_id"]),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        restored = self.push()
+        self.assertEqual(restored["status"], "completed")
+        self.assertEqual(restored["ledger_id"], report["ledger_id"])
+
     def test_foreign_ledger_identity_in_sync_tables_stops(self) -> None:
         self.seed_review()
         report = self.align()
@@ -1104,6 +1272,83 @@ class TestSyncGate(SyncCase):
         self.assertTrue(payload["ok"])
         self.assertNotEqual(payload["data"]["ledger_id"], original["ledger_id"])
         self.assertEqual(self.cloud.calls, calls)
+
+    def test_new_identity_refuses_open_or_damaged_pending(self) -> None:
+        self.seed_review()
+        original = self.push()
+        copied = self.root / "pending-copy.sqlite3"
+        _snapshot_database(self.db, copied)
+        before = _ledger_id(copied)
+        self.seed_review(pe=9.0)
+        self.cloud.fail_before_apply = True
+        unknown = self.push()
+        self.assertEqual(unknown["status"], "unknown")
+        self.assertEqual(read_pending(self.state)["status"], "open")
+        with self.assertRaises(RemoteStoreError) as ctx:
+            assign_new_ledger_identity(copied, self.state)
+        self.assertEqual(ctx.exception.code, "PENDING_WRITE")
+        self.assertEqual(_ledger_id(copied), before)
+        pending_path = self.state / "pending-write.json"
+        pending_path.write_text("{", encoding="utf-8")
+        with self.assertRaises(RemoteStoreError) as ctx:
+            assign_new_ledger_identity(copied, self.state)
+        self.assertEqual(ctx.exception.code, "PENDING_UNREADABLE")
+        self.assertEqual(_ledger_id(copied), before)
+        self.assertEqual(_ledger_id(self.db), original["ledger_id"])
+
+    def test_new_identity_waits_for_shared_write_lock(self) -> None:
+        import threading
+
+        self.seed_review()
+        self.push()
+        copied = self.root / "locked-copy.sqlite3"
+        _snapshot_database(self.db, copied)
+        before = _ledger_id(copied)
+        entered = threading.Event()
+        release = threading.Event()
+        result: dict[str, Any] = {}
+
+        def hold_lock() -> None:
+            with exclusive_write(self.state):
+                entered.set()
+                release.wait(timeout=5)
+
+        def try_fork() -> None:
+            entered.wait(timeout=5)
+            try:
+                assign_new_ledger_identity(copied, self.state)
+                result["ok"] = True
+            except Exception as exc:  # noqa: BLE001 - capture for the main thread
+                result["error"] = exc
+
+        holder = threading.Thread(target=hold_lock, daemon=True)
+        waiter = threading.Thread(target=try_fork, daemon=True)
+        holder.start()
+        self.assertTrue(entered.wait(timeout=5))
+        waiter.start()
+        waiter.join(timeout=0.3)
+        self.assertTrue(waiter.is_alive())
+        self.assertEqual(_ledger_id(copied), before)
+        save_open_pending(
+            self.state,
+            {
+                "format_version": 1,
+                "operation_id": "op-blocked-identity",
+                "kind": "sync-push",
+                "project_id": PROJECT,
+                "ledger_id": before,
+                "request_digest": "digest-blocked",
+                "request": {"groups": []},
+                "verification_history": [],
+            },
+        )
+        release.set()
+        holder.join(timeout=5)
+        waiter.join(timeout=5)
+        self.assertFalse(waiter.is_alive())
+        self.assertIsInstance(result.get("error"), RemoteStoreError)
+        self.assertEqual(result["error"].code, "PENDING_WRITE")
+        self.assertEqual(_ledger_id(copied), before)
 
     def test_open_pending_blocks_a_new_push(self) -> None:
         self.seed_review()

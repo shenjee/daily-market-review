@@ -245,17 +245,10 @@ def _run_sync(args: argparse.Namespace, *, download: bool) -> int:
 
 
 def cmd_sync_new_identity(args: argparse.Namespace) -> int:
-    from marketreview.sqlite_schema import connect, init_db
-    from marketreview.sync_ledger import ensure_sync_schema, fork_ledger_identity
+    from marketreview.sync_engine import assign_new_ledger_identity
 
     sqlite_path = resolve_db_path(args.source if args.source is not None else args.db)
-    conn = connect(sqlite_path)
-    try:
-        ensure_sync_schema(conn)
-        init_db(conn)
-        ledger_id = fork_ledger_identity(conn)
-    finally:
-        conn.close()
+    ledger_id = assign_new_ledger_identity(sqlite_path, args.state_dir)
     _success({"sqlite_path": str(sqlite_path), "ledger_id": ledger_id})
     return 0
 

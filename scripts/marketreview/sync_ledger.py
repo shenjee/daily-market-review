@@ -9,10 +9,12 @@ from typing import Any, Mapping
 
 from .errors import MarketReviewError
 from .sync_groups import (
+    INT_REVIEW_FIELDS,
     absent_group,
     canonical_json,
     digest_of,
     group_ref,
+    normalize_public_group,
     present_view,
 )
 
@@ -237,9 +239,102 @@ def read_baselines(
             raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线无法读取。")
         if row["baseline_state"] not in {"present", "confirmed_absent"}:
             raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线状态无法读取。")
-        ref = group_ref(row["group_kind"], key)
-        found[ref] = {"baseline_state": row["baseline_state"], "group": group}
+        if row["group_kind"] not in {"review", "event"}:
+            raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线无法读取。")
+        verified = _require_stored_baseline_group(
+            str(row["group_kind"]),
+            key,
+            str(row["baseline_state"]),
+            group,
+        )
+        ref = group_ref(str(row["group_kind"]), key)
+        found[ref] = {"baseline_state": row["baseline_state"], "group": verified}
     return found
+
+
+def _require_stored_baseline_group(
+    kind: str,
+    key: Mapping[str, Any],
+    state: str,
+    group: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Reject structurally incomplete or identity-mismatched baseline payloads."""
+    try:
+        row_ref = group_ref(kind, key)
+    except (KeyError, TypeError, MarketReviewError) as exc:
+        raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线无法读取。") from exc
+    if group.get("group_kind") != kind:
+        raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线组身份不一致。")
+    payload_key = group.get("group_key")
+    if not isinstance(payload_key, dict):
+        raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线无法读取。")
+    try:
+        if group_ref(kind, payload_key) != row_ref:
+            raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线组身份不一致。")
+    except (KeyError, TypeError) as exc:
+        raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线无法读取。") from exc
+    exists = group.get("exists")
+    if type(exists) is not bool:
+        raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线无法读取。")
+    if state == "present":
+        if exists is not True:
+            raise MarketReviewError(
+                code="BASELINE_CORRUPT",
+                message="共同基线存在性与状态矛盾。",
+            )
+        try:
+            verified = normalize_public_group(group)
+        except (MarketReviewError, KeyError, TypeError, ValueError) as exc:
+            raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线无法读取。") from exc
+        _assert_stored_baseline_identity(kind, key, verified)
+        _assert_stored_review_integers(verified)
+        return verified
+    if state == "confirmed_absent":
+        if exists is not False:
+            raise MarketReviewError(
+                code="BASELINE_CORRUPT",
+                message="共同基线存在性与状态矛盾。",
+            )
+        if "review" in group or "events" in group:
+            raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线无法读取。")
+        return absent_group(kind, key)
+    raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线状态无法读取。")
+
+
+def _assert_stored_baseline_identity(
+    kind: str,
+    key: Mapping[str, Any],
+    group: Mapping[str, Any],
+) -> None:
+    """Stored B must keep the same identity inside the payload as on the row."""
+    if kind != "review":
+        return
+    review = group.get("review")
+    if not isinstance(review, dict):
+        raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线无法读取。")
+    inner = review.get("trade_date")
+    outer = key.get("trade_date")
+    payload_key = group.get("group_key")
+    payload_date = payload_key.get("trade_date") if isinstance(payload_key, dict) else None
+    if type(inner) is not str or not inner or inner != outer or inner != payload_date:
+        raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线组身份不一致。")
+
+
+def _assert_stored_review_integers(group: Mapping[str, Any]) -> None:
+    """Stored integer review fields must be JSON integers or null, never strings or bools."""
+    if group.get("group_kind") != "review" or group.get("exists") is not True:
+        return
+    review = group.get("review")
+    if not isinstance(review, dict):
+        raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线无法读取。")
+    for name in INT_REVIEW_FIELDS:
+        if name not in review:
+            raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线无法读取。")
+        value = review[name]
+        if value is None:
+            continue
+        if type(value) is not int:
+            raise MarketReviewError(code="BASELINE_CORRUPT", message="共同基线无法读取。")
 
 
 def has_coverage(conn: sqlite3.Connection, *, project_id: str, ledger_id: str) -> bool:

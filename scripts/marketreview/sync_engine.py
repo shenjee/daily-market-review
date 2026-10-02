@@ -42,6 +42,7 @@ from .sync_ledger import (
     write_baseline,
 )
 from .write_gate import (
+    assert_no_open_pending,
     close_pending,
     exclusive_write,
     read_pending,
@@ -383,6 +384,32 @@ def protect_snapshot(state_dir: Path, sqlite_path: Path) -> None:
         current.append(real)
     path.write_text(json.dumps({"paths": current}), encoding="utf-8")
     os.chmod(path, 0o600)
+
+
+def protect_registered_snapshots(state_dir: Path, sqlite_paths: Sequence[Path]) -> list[str]:
+    """Record migration-register SQLite copies under the shared write gate."""
+    protected: list[str] = []
+    with exclusive_write(state_dir):
+        for sqlite_path in sqlite_paths:
+            protect_snapshot(state_dir, sqlite_path)
+            protected.append(os.path.realpath(sqlite_path))
+    return protected
+
+
+def assign_new_ledger_identity(sqlite_path: Path, state_dir: Path) -> str:
+    """Fork ledger id only while holding the shared gate and with no open pending."""
+    from .sqlite_schema import init_db
+    from .sync_ledger import fork_ledger_identity
+
+    with exclusive_write(state_dir):
+        assert_no_open_pending(state_dir)
+        conn = connect(sqlite_path)
+        try:
+            ensure_sync_schema(conn)
+            init_db(conn)
+            return fork_ledger_identity(conn)
+        finally:
+            conn.close()
 
 
 def assert_pull_target_allowed(sqlite_path: Path, state_dir: Path) -> Path:

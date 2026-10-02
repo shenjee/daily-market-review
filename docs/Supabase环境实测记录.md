@@ -1,5 +1,25 @@
 # Supabase 环境实测记录
 
+## 2026-10-02 合同第 5 项 F3 补全与既有闸门接入
+
+未改 `CLOUD_DEFAULT_ENABLED`，未打开生产日常 SQLite，未改云端，未改写长期登记。复审 `/private/tmp/daily-market-review-step5-reaudit-20261002.md`：F1 代码与 F2 已通过；F3 仍缺内部身份与整数字段；既有两份副本尚未挂入本机闸门。
+
+存盘基线校验现要求：`review.trade_date` 必须与外层组键一致；`advancing_count` / `declining_count` / `pullback_count` 必须是 JSON 整数或 null（拒绝字符串和 bool）。传输层的 jsonb 整值浮点归一化未改。fork 与 push 均 `BASELINE_CORRUPT`，身份和基线不变。回归：`test_inner_review_identity_and_integer_types_stop_fork_and_push`。
+
+既有登记接入本机共享闸门：`python3 scripts/acceptance_migration_register.py --protect-register ~/.marketreview/acceptance-evidence/20261002T093737Z_step5_migration_register/migration_register.json`。登记 SHA-256 仍为 `e54cf0ac54d277045a34d01be8ba0e544d7ac13af6be4a9f5980172c725fbf9d`。M3/M1 一致性副本的原路径、硬链接、符号链接在产品 `~/.marketreview/supabase-state/` 下 pull 准入均为 `TARGET_FORBIDDEN`。证据：`~/.marketreview/acceptance-evidence/20261002T142740Z_step5_protect_existing/`。
+
+隔离 PG17.11 全套测试通过。#8/#9/#11 仍不关闭。
+
+## 2026-10-02 合同第 5 项复审缺陷修复
+
+未改 `CLOUD_DEFAULT_ENABLED`，未读生产 SQLite，未改云端。#8/#9/#11 仍不关闭。依据 `/private/tmp/daily-market-review-step5-audit-20261002.md` 三项代码缺陷：
+
+1. **长期登记接入 pull 保护**：`acceptance_migration_register.py` 写入登记后，在共享闸门目录登记各 SQLite 一致性副本；`sync pull` 对路径、符号链接和硬链接别名返回 `TARGET_FORBIDDEN`。回归：`test_register_protects_sqlite_copies_from_pull`。
+2. **`new-identity` 共用闸门**：`assign_new_ledger_identity` 先取得 `write.lock`，未关闭或损坏的 pending 时拒绝改身份，原 ledger_id 不变。回归：open/damaged pending 与跨线程持锁。
+3. **结构残缺基线**：`read_baselines` 核验组身份、存在性与状态一致及完整字段；`{}`、错组键、present/absent 矛盾均 `BASELINE_CORRUPT`，不换身份、不推进基线。
+
+隔离 PG17.11 上全套 `python3 -m unittest discover -s tests -p 'test_*.py'` **214** 项通过。已有长期登记文件未改写；需要把既有副本纳入共享闸门时，可对登记文件调用 `protect_from_register`（不改 `migration_register.json` 哈希）。
+
 ## 2026-10-02 合同第 5 项：约一百条批量写入与限流
 
 未改 `CLOUD_DEFAULT_ENABLED`，未连接生产项目。隔离 PostgreSQL 17.11（`/tmp/dmr-pg-rpc-v1`，端口 55432）上 `test_hundred_event_batch_updates_identity_and_keeps_details` 通过：一次 `marketreview_save_events` 写入 100 条；按唯一键把 `000001` 改名后 `created_at` 仍是原批次、`updated_at` 是新批次；原明细和板块还在；同一批重复身份返回 `DUPLICATE_IDENTITY`，条数和明细不变。测完已停止该实例。
