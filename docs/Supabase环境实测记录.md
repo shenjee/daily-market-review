@@ -1,39 +1,48 @@
 # Supabase 环境实测记录
 
-## 2026-10-01 合同第 4 项（进行中）：M3 侧准备 + 真实 authenticated JWT
+## 2026-10-01 合同第 4 项：M3 准备 + JWT + M1 第二份备份 + 真双机
 
-本机：MacBook Pro **Mac15,6 / Apple M3 Pro**；项目 `nyscgdxrctwchbzclszt`（ACTIVE_HEALTHY）。**未**改 `CLOUD_DEFAULT_ENABLED`；**未**导入正式生产账本；**未**执行项目暂停／恢复；**未**触碰日常 SQLite 业务写入。
+本机：MacBook Pro **Mac15,6 / Apple M3 Pro**；项目 `nyscgdxrctwchbzclszt`（ACTIVE_HEALTHY）。**未**改 `CLOUD_DEFAULT_ENABLED`；**未**导入正式生产账本。
 
-证据目录：`~/.marketreview/acceptance-evidence/20261001T140926Z_step4_mac_prep/`
+证据目录：
+- 准备／JWT：`~/.marketreview/acceptance-evidence/20261001T140926Z_step4_mac_prep/`
+- 真双机：`~/.marketreview/acceptance-evidence/20261002T000200Z_step4_dual_physical/`
+- 暂停／恢复：`~/.marketreview/acceptance-evidence/20261002T073344Z_step4_pause_resume/`
+- 缺口补齐（进行中）：`~/.marketreview/acceptance-evidence/20261002T080000Z_step4_gap_fill/`（脚本就绪后写入）
 
-### 已完成（本机 M3）
+### 独立审查结论（2026-10-02）
 
-| 子项 | 结果 |
-| --- | --- |
-| 原 SQLite 一致性备份 | SQLite online backup API → `sqlite_consistency/market_review.sqlite3.consistent`；reviews=31，events=3048；含 `inventory.json` + `CHECKSUMS.json` |
-| #9 第二份备份打包 | 源包 `~/.marketreview/backups/supabase/20261001T133739Z/`（PG17 客户端，revision=21）CHECKSUMS 自检通过；另打 `cloud_backup_for_m1/20261001T133739Z.tar.gz` + `VERIFY_ON_M1.sh` |
-| 真实 Auth `authenticated` JWT | Admin 创建临时用户 → password grant 得 `role=authenticated` JWT → Data API `marketreview_probe`：**HTTP 403 / `42501` permission denied**（非网关验签失败）；对照伪造 JWT：**401 / PGRST301**；用户已删除 |
+**第 4 项暂不整项通过、不勾选。** 未发现新的产品代码缺陷；缺口为验收证据／场景。详见 `/private/tmp/daily-market-review-step4-audit-20261002.md`。
 
-要点：此前仅有伪造 JWT→PGRST301；本次证明真实会话 JWT 能通过网关验签，并被业务权限正确拒绝。
+已核验一致：M3 原库一致性备份；JWT 链；暂停／恢复；M3 侧同步原始 reports。
 
-### M1 第二份备份（用户实测，2026-10-02）
+仍阻塞：
+1. **M1 原 SQLite 一致性备份**（合同要求两份原库；不能用演练 `m1.sqlite3` 替代）
+2. **M1 原始报告**（`m1_seed`／`m1_push_*`／`m1_pull*`／`verify_m1` 与第二份备份校验原输出；不得仅用汇总结论）
+3. **双机完整数据比较**（五表、时间、null、列表顺序；现有 `verify-local` 不够）
+4. **真双机未知结果恢复**（提交后丢响应 → 原 `operation_id` 恢复 → revision 不重复推进）
 
-机型：`Jis-MacBook-Air`。在 `~/.marketreview/backups/supabase` 执行 `./VERIFY_ON_M1.sh`：
+### 已交付（开发侧；审查已部分互核）
 
-- 解压 `20261001T133739Z.tar.gz` → 同路径目录
-- `shasum -a 256 -c CHECKSUMS`：**12/12 OK**（含 `contracts/supabase_rpc_v1.json`、`BACKUP_OK`）
-- manifest：`row_counts` 与第 3 项一致（reviews=2，events=3，…，`sync_commit_result=6`）；`public_functions=18`；`revision=21`
-- 输出：`M1 second-copy verify: OK`
+| 子项 | 结果 | 审查状态 |
+| --- | --- | --- |
+| M3 原 SQLite 一致性备份 | online backup API → `sqlite_consistency/`；五表 31/3048/1175/1026/590 | 已独立核验通过 |
+| #9 第二份备份打包 | `cloud_backup_for_m1/20261001T133739Z.tar.gz` + `VERIFY_ON_M1.sh` | 传输包正确；**不单独证明 M1 现存放副本** |
+| M1 第二份备份校验 | 用户汇报 12/12 OK，revision=21 | **缺 M1 机器原输出绑定** |
+| 真实 Auth JWT | 403/42501 vs 401/PGRST301 | 已独立核验通过 |
+| 真物理双机（重叠／独有／冲突／显式删除／全量 pull） | 哨兵 `2099-10-01`…`04`；cleanup 后 revision=29 | M3 reports 一致；**缺 M1 原 reports；缺全量比较；缺未知结果** |
+| 暂停／恢复 live | INACTIVE→540；恢复后 revision=29 | 已独立核验通过 |
 
-### 仍待（缺演练／授权）
+### 仍待（第 4 项缺口）
 
-| 子项 | 阻塞 |
-| --- | --- |
-| 真物理双机同步演练 | 同 Mac 双账本不替代；需 M1↔M3 做重叠／独有／冲突／显式删除／两边全量下载 |
-| M1 Agent 路径冒烟 | 须在 M1 Agent 环境执行（第二份备份校验已在 M1 shell 完成） |
-| 项目暂停／恢复 live | **须用户明确授权**后再对 `nyscgdxrctwchbzclszt` 调 pause／restore |
+见上「仍阻塞」四条。工具：`scripts/acceptance_sqlite_consistency_backup.py`、`scripts/acceptance_step4_gap_fill.py`。证据进行中：`~/.marketreview/acceptance-evidence/20261002T080000Z_step4_gap_fill/`。
 
-状态：**第 4 项不可整项勾选**（第二份备份子项已过；真双机／暂停仍挂）。#8/#9 整体、#10 仍未通过。
+本轮 M3 已补：
+- `snapshots/m3_after_final_pull.json`（五表 + 全组；含 2099-09 样例与演练日后最终态）
+- `reports/unknown_result_m3.json`（丢响应 → `operation_id` 恢复；revision 29→30 后稳定不重复推进；云端 `groups` 完整）
+- `M1_GAP_FILL_RUNBOOK.txt`（待 M1 执行并回传）
+
+云端暂留哨兵 `2099-10-05`（revision=30），待 M1 `2099-10-06` 未知结果演练后再 `cleanup-unknown-sentinel`。#8/#9 整体、#10 仍未通过。
 
 ---
 
