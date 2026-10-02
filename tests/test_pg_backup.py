@@ -216,25 +216,7 @@ class TestLocalDumpRestoreDrill(unittest.TestCase):
         )
         if init.returncode != 0:
             raise AssertionError(init.stderr[-2000:])
-        start = subprocess.run(
-            [
-                str(cls.bin_dir / "pg_ctl"),
-                "-D",
-                str(cls.data_dir),
-                "-l",
-                str(root / "server.log"),
-                "-w",
-                "-o",
-                f"-p {port} -c listen_addresses=127.0.0.1",
-                "start",
-            ],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if start.returncode != 0:
-            log = (root / "server.log").read_text(encoding="utf-8", errors="replace")[-2000:]
-            raise AssertionError(f"{start.stderr}\n{log}")
+        _start_trust_server(cls.bin_dir, cls.data_dir, root, port)
         cls.conn = PgConn(host="127.0.0.1", port=str(port), user="postgres", database="mr_src")
         psql_script(cls.conn, "CREATE DATABASE mr_src;", database="postgres", bin_dir=cls.bin_dir)
         migration = "\n".join(path.read_text(encoding="utf-8") for path in sorted(MIGRATIONS.glob("*.sql")))
@@ -545,25 +527,7 @@ class TestPostgresStubOnNonPostgresCluster(unittest.TestCase):
         )
         if init.returncode != 0:
             raise AssertionError(init.stderr[-2000:])
-        start = subprocess.run(
-            [
-                str(cls.bin_dir / "pg_ctl"),
-                "-D",
-                str(cls.data_dir),
-                "-l",
-                str(root / "server.log"),
-                "-w",
-                "-o",
-                f"-p {port} -c listen_addresses=127.0.0.1",
-                "start",
-            ],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if start.returncode != 0:
-            log = (root / "server.log").read_text(encoding="utf-8", errors="replace")[-2000:]
-            raise AssertionError(f"{start.stderr}\n{log}")
+        _start_trust_server(cls.bin_dir, cls.data_dir, root, port)
         cls.conn = PgConn(host="127.0.0.1", port=str(port), user="mr_admin", database="postgres")
 
     @classmethod
@@ -713,6 +677,31 @@ def _commit_payload(groups: list, operation_id: str, digest: str, expected: int)
         "expected_revision": expected,
         "groups": groups,
     }
+
+
+def _start_trust_server(bin_dir: Path, data_dir: Path, root: Path, port: int) -> None:
+    """Start a throwaway server. Ubuntu cannot write /var/run/postgresql."""
+    socket_dir = root / "socket"
+    socket_dir.mkdir()
+    start = subprocess.run(
+        [
+            str(bin_dir / "pg_ctl"),
+            "-D",
+            str(data_dir),
+            "-l",
+            str(root / "server.log"),
+            "-w",
+            "-o",
+            f"-p {port} -c listen_addresses=127.0.0.1 -c unix_socket_directories={socket_dir}",
+            "start",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if start.returncode != 0:
+        log = (root / "server.log").read_text(encoding="utf-8", errors="replace")[-2000:]
+        raise AssertionError(f"{start.stderr}\n{log}")
 
 
 def _free_port() -> int:
