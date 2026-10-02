@@ -23,7 +23,10 @@ jobs:
       - name: Start an isolated database
         run: |
           set -euo pipefail
-          BIN="$(dirname "$(readlink -f "$(command -v pg_dump)")")"
+          # Ubuntu 的 /usr/bin/pg_dump 是 pg_wrapper，同目录没有 initdb。
+          INITDB="$(find /usr/lib/postgresql -type f -name initdb | sort | tail -n 1)"
+          test -n "$INITDB"
+          BIN="$(dirname "$INITDB")"
           echo "MARKETREVIEW_PG_BIN=$BIN" >> "$GITHUB_ENV"
           mkdir -p "$RUNNER_TEMP/pg/socket"
           "$BIN/initdb" \
