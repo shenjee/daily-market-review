@@ -42,7 +42,7 @@ Docker 守护进程未启动。用隔离数据目录 `/tmp/dmr-pg-rpc-v1`、Post
 
 新增 `.github/workflows/tests.yml`。推送和拉取请求时在 Ubuntu 上安装 PostgreSQL 工具，用 `initdb --auth=trust` 在临时目录启动隔离实例，端口 55432，然后执行 `python3 -m unittest discover -s tests -p 'test_*.py'`。工作流文件里没有 Secret、数据库密码、`secrets.` 或 `~/.marketreview`。`tests/test_ci_workflow.py` 锁住这些约束。
 
-这条流水线还没有在 GitHub 上跑过，因为本轮没有推送。本地 PostgreSQL 上的事务、权限、同步幂等和 1201 条快照测试此前已经通过。
+2026-10-02 已推到 `main`。第一次运行因 Ubuntu 的 `pg_dump` 是包装脚本、旁边没有 `initdb` 而失败；第二次因临时库仍去写 `/var/run/postgresql` 而失败。改用 `/usr/lib/postgresql/*/bin`，并把临时库的套接字目录放到可写路径后，[Actions 运行 36996822437](https://github.com/shenjee/daily-market-review/actions/runs/36996822437) 通过。工作流里没有 Secret。
 
 ## 2026-10-01 合同第 4 项：M3 准备 + JWT + M1 第二份备份 + 真双机
 
