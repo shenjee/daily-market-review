@@ -248,6 +248,91 @@ class TestBackendSelection(unittest.TestCase):
                 open_repository(backend="supabase", db_path=None, config_dir=Path(tmp))
             self.assertEqual(ctx.exception.code, "CONFIG_MISSING")
             self.assertFalse((Path(tmp) / "market_review.sqlite3").exists())
+            # Templates are materialized so the user has files to edit.
+            self.assertTrue((Path(tmp) / "config").is_file())
+            self.assertTrue((Path(tmp) / "supabase.secret").is_file())
+            self.assertIn("已自动创建模板", str(ctx.exception))
+            self.assertIn("请编辑", str(ctx.exception))
+
+    def test_ensure_templates_never_overwrite_and_skip_when_legacy_usable(self) -> None:
+        from marketreview.backend import ensure_cloud_config_templates
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            home.mkdir()
+            existing_config = "backend=sqlite\nsupabase_url=https://keep.example.co\n"
+            existing_secret = "sb_secret_keep_me\n"
+            (home / "config").write_text(existing_config, encoding="utf-8")
+            (home / "supabase.secret").write_text(existing_secret, encoding="utf-8")
+            created = ensure_cloud_config_templates(home)
+            self.assertEqual(created, [])
+            self.assertEqual((home / "config").read_text(encoding="utf-8"), existing_config)
+            self.assertEqual((home / "supabase.secret").read_text(encoding="utf-8"), existing_secret)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "legacy-home"
+            home.mkdir()
+            (home / "supabase.config").write_text(
+                "SUPABASE_URL=https://legacy.example.co\n"
+                "SUPABASE_SECRET_KEY=sb_secret_legacy\n",
+                encoding="utf-8",
+            )
+            created = ensure_cloud_config_templates(home)
+            self.assertEqual(created, [])
+            self.assertFalse((home / "config").exists())
+            self.assertFalse((home / "supabase.secret").exists())
+            settings = load_supabase_settings(home)
+            self.assertEqual(settings.url, "https://legacy.example.co")
+            self.assertEqual(settings.secret_key, "sb_secret_legacy")
+
+    def test_exclusive_create_skips_when_peer_wins_race(self) -> None:
+        from marketreview.backend import _write_new_file_exclusive, ensure_cloud_config_templates
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            target = home / "config"
+            winner = "backend=sqlite\nsupabase_url=https://peer.example.co\n"
+            target.write_text(winner, encoding="utf-8")
+            created = _write_new_file_exclusive(target, b"SHOULD_NOT_WRITE\n", mode=0o644)
+            self.assertFalse(created)
+            self.assertEqual(target.read_text(encoding="utf-8"), winner)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            # Peer fills secret after we would have decided to create: O_EXCL must skip.
+            secret = home / "supabase.secret"
+            secret.write_text("sb_secret_peer_filled\n", encoding="utf-8")
+            os.chmod(secret, 0o600)
+            created = ensure_cloud_config_templates(home)
+            self.assertNotIn(str(secret), created)
+            self.assertEqual(secret.read_text(encoding="utf-8"), "sb_secret_peer_filled\n")
+
+    def test_secret_created_with_0600_and_chmod_failure_raises(self) -> None:
+        from marketreview.backend import _write_new_file_exclusive, ensure_cloud_config_templates
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            created = ensure_cloud_config_templates(home)
+            secret = home / "supabase.secret"
+            self.assertIn(str(secret), created)
+            self.assertEqual(secret.stat().st_mode & 0o777, 0o600)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            target = home / "supabase.secret"
+            real_open = os.open
+
+            def open_then_fail_fchmod(path, flags, mode=0o777):  # noqa: ANN001
+                fd = real_open(path, flags, mode)
+                return fd
+
+            with patch("marketreview.backend.os.open", side_effect=open_then_fail_fchmod):
+                with patch("marketreview.backend.os.fchmod", side_effect=OSError(1, "EPERM")):
+                    with self.assertRaises(BackendSelectionError) as ctx:
+                        _write_new_file_exclusive(target, b"sb_secret_x\n", mode=0o600)
+            self.assertEqual(ctx.exception.code, "CONFIG_MISSING")
+            self.assertIn("权限", str(ctx.exception))
+            self.assertFalse(target.exists())
 
     def test_legacy_config_supplies_url_and_secret_without_logging_them(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

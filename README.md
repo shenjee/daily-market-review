@@ -88,9 +88,7 @@ export MARKETREVIEW_HOME="/path/to/marketreview-data"
 
 正式切换到 Supabase 之前，日常仍默认使用本地 SQLite，可不填写云端凭证。
 
-需要接入云端时，把安装目录里的模板复制到本机，再按控制台 Project Settings → API Keys **自行填写**。填好的文件只留在本机，不要提交 Git、打进发布包，或贴到对话 / 日志 / Issue。
-
-**仅在目标文件尚不存在时创建**；已有 `config` 或 `supabase.secret` 时不要覆盖，对照模板手工补字段。
+需要接入云端时（`sync` 或 `backend=supabase`），若本机尚无配置文件，CLI 会自动从 Skill 安装目录复制模板到 `~/.marketreview/`（已有文件不覆盖），并提示自行填写。也可手工复制。填好的文件只留在本机，不要提交 Git、打进发布包，或贴到对话 / 日志 / Issue。
 
 ```bash
 mkdir -p ~/.marketreview
