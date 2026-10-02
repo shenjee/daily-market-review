@@ -11,13 +11,20 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 import unittest
+from dataclasses import asdict
 from pathlib import Path
 
 import _bootstrap  # noqa: F401
 
-from marketreview.schema import ATOMIC_FIELD_NAMES
+from marketreview.ladder import build_ladder, ladder_to_dict
+from marketreview.repository import MarketReviewRepository
+from marketreview.schema import ATOMIC_FIELD_NAMES, PriceLimitEventInput
+from marketreview.service import missing_atomic_fields_of
+from marketreview.summary import compute_summary, events_to_dict, review_to_dict
+from marketreview.supabase_store import SupabaseRepository
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "contracts" / "supabase_rpc_v1.json"
@@ -30,6 +37,26 @@ CONTAINER = "dmr-pg-rpc-v1"
 DATABASE = "marketreview_v1_test"
 BATCH = "2026-08-21T07:00:00+00:00"
 BATCH_2 = "2026-08-21T08:00:00+00:00"
+
+
+class _PgRpcTransport:
+    def __init__(self, test: "PostgresRpcTest") -> None:
+        self._test = test
+
+    def call(self, function: str, request: dict, *, write: bool) -> dict:
+        return self._test._rpc(function, dict(request))
+
+
+def _read_view(day) -> dict:
+    return {
+        "review": review_to_dict(day.review),
+        "events": events_to_dict(day.events),
+        "previous_events": events_to_dict(day.previous_events),
+        "details": [asdict(item) for item in day.details],
+        "summary": compute_summary(day.review, day.events, day.previous_events),
+        "missing_fields": missing_atomic_fields_of(day.review),
+        "ladder": ladder_to_dict(build_ladder(day.events, day.details)),
+    }
 
 
 def _split_sql(script: str) -> list[str]:
@@ -159,8 +186,15 @@ class PostgresRpcTest(unittest.TestCase):
             raise unittest.SkipTest("MARKETREVIEW_PG_TEST=0")
         port = os.environ.get("MARKETREVIEW_PGPORT")
         if port:
-            cls._backend = "psycopg"
             cls._pg_port = port
+            try:
+                import psycopg  # noqa: F401
+            except ImportError:
+                if shutil.which("psql") is None:
+                    raise unittest.SkipTest("MARKETREVIEW_PGPORT 需要 psycopg 或 psql")
+                cls._backend = "psql"
+            else:
+                cls._backend = "psycopg"
         elif _docker_ready():
             cls._backend = "docker"
             cls._pg_port = None
@@ -200,7 +234,7 @@ class PostgresRpcTest(unittest.TestCase):
                 raise unittest.SkipTest("PostgreSQL 容器未在时限内就绪")
         else:
             raise unittest.SkipTest("需要已启动的 Docker，或 MARKETREVIEW_PGPORT 指向隔离 PostgreSQL")
-        if cls._backend == "psycopg":
+        if cls._pg_port:
             cls._psql("DROP DATABASE IF EXISTS marketreview_v1_test", database="postgres")
         cls._psql("CREATE DATABASE marketreview_v1_test", database="postgres")
         migration = "\n".join(path.read_text(encoding="utf-8") for path in MIGRATIONS)
@@ -231,8 +265,10 @@ class PostgresRpcTest(unittest.TestCase):
 
     @classmethod
     def _execute(cls, sql: str, database: str) -> tuple[int, str, str]:
-        if cls._pg_port:
+        if cls._backend == "psycopg":
             return cls._execute_psycopg(sql, database)
+        if cls._backend == "psql":
+            return cls._execute_local_psql(sql, database)
         completed = subprocess.run(
             [
                 "docker",
@@ -240,6 +276,33 @@ class PostgresRpcTest(unittest.TestCase):
                 "-i",
                 CONTAINER,
                 "psql",
+                "-U",
+                "postgres",
+                "-d",
+                database,
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-X",
+                "-q",
+                "-t",
+                "-A",
+            ],
+            input=sql,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        return completed.returncode, completed.stdout, completed.stderr
+
+    @classmethod
+    def _execute_local_psql(cls, sql: str, database: str) -> tuple[int, str, str]:
+        completed = subprocess.run(
+            [
+                "psql",
+                "-h",
+                "127.0.0.1",
+                "-p",
+                str(cls._pg_port),
                 "-U",
                 "postgres",
                 "-d",
@@ -724,6 +787,208 @@ class PostgresRpcTest(unittest.TestCase):
         self.assertTrue(listed["complete"])
         self.assertEqual(listed["counts"]["events"], 1201)
         self.assertEqual(len(listed["events"]), 1201)
+
+    def test_sync_snapshot_over_1000_is_one_complete_jsonb(self) -> None:
+        self._psql(
+            """
+            INSERT INTO marketreview.daily_price_limit_event (
+              trade_date, market, code, name, direction, closed_at_limit,
+              limit_rate_bp, streak_height, created_at, updated_at
+            )
+            SELECT
+              '2026-08-21',
+              'sh',
+              lpad(gs::text, 6, '0'),
+              '名称',
+              'up',
+              1,
+              1000,
+              1,
+              '2026-08-21T07:00:00+00:00',
+              '2026-08-21T07:00:00+00:00'
+            FROM generate_series(1, 1201) AS gs;
+            INSERT INTO marketreview.daily_price_limit_event_reason (
+              trade_date, market, code, direction, position, value
+            ) VALUES
+              ('2026-08-21', 'sh', '000001', 'up', 1, '后'),
+              ('2026-08-21', 'sh', '000001', 'up', 0, '先');
+            """
+        )
+        snapshot = self._snapshot()
+        self.assertTrue(snapshot["complete"])
+        self.assertEqual(snapshot["counts"]["events"], 1201)
+        self.assertEqual(len(snapshot["events"]), 1201)
+        self.assertEqual(snapshot["events"][0]["code"], "000001")
+        self.assertEqual(snapshot["events"][-1]["code"], "001201")
+        self.assertEqual(
+            [row["code"] for row in snapshot["events"]],
+            [f"{number:06d}" for number in range(1, 1202)],
+        )
+        self.assertEqual(snapshot["counts"]["reasons"], 2)
+        self.assertEqual(
+            [row["value"] for row in snapshot["reasons"]],
+            ["先", "后"],
+        )
+        self.assertEqual(snapshot["counts"]["history"], len(snapshot["history"]))
+        self.assertEqual(snapshot["counts"]["sync_results"], len(snapshot["sync_results"]))
+        for name in ("reviews", "details", "sectors"):
+            self.assertEqual(snapshot["counts"][name], len(snapshot[name]))
+
+    def test_hundred_event_batch_updates_identity_and_keeps_details(self) -> None:
+        events = [
+            {
+                "market": "sh",
+                "code": f"{number:06d}",
+                "name": "批量",
+                "direction": "up",
+                "closed_at_limit": True,
+                "limit_rate_bp": 1000,
+                "streak_height": 1,
+            }
+            for number in range(1, 101)
+        ]
+        created = self._rpc(
+            "marketreview_save_events",
+            {
+                "schema_version": 1,
+                "trade_date": "2026-08-21",
+                "batch_time": BATCH,
+                "events": events,
+            },
+        )
+        self.assertFalse(created["noop"])
+        detailed = self._rpc(
+            "marketreview_save_event_details",
+            {
+                "schema_version": 1,
+                "trade_date": "2026-08-21",
+                "batch_time": BATCH,
+                "details": [
+                    {
+                        "market": "sh",
+                        "code": "000001",
+                        "direction": "up",
+                        "note": "原明细",
+                        "sectors": ["甲", "乙"],
+                    }
+                ],
+            },
+        )
+        updated = self._rpc(
+            "marketreview_save_events",
+            {
+                "schema_version": 1,
+                "trade_date": "2026-08-21",
+                "batch_time": BATCH_2,
+                "events": [{**events[0], "name": "已更新"}],
+            },
+        )
+        self.assertEqual(updated["revision"], detailed["revision"] + 1)
+        day = self._rpc(
+            "marketreview_get_day",
+            {
+                "schema_version": 1,
+                "trade_date": "2026-08-21",
+                "previous_trade_date": "2026-08-20",
+            },
+        )
+        self.assertTrue(day["complete"])
+        self.assertEqual(day["counts"]["events"], 100)
+        first = day["events"][0]
+        self.assertEqual(first["code"], "000001")
+        self.assertEqual(first["name"], "已更新")
+        self.assertEqual(first["created_at"], BATCH)
+        self.assertEqual(first["updated_at"], BATCH_2)
+        self.assertEqual(day["events"][-1]["code"], "000100")
+        self.assertEqual(day["details"][0]["note"], "原明细")
+        self.assertEqual(day["details"][0]["created_at"], BATCH)
+        self.assertEqual([row["value"] for row in day["sectors"]], ["甲", "乙"])
+        error = self._rpc_error(
+            "marketreview_save_events",
+            {
+                "schema_version": 1,
+                "trade_date": "2026-08-21",
+                "batch_time": BATCH_2,
+                "events": [events[0], events[0]],
+            },
+        )
+        self.assertIn("DUPLICATE_IDENTITY", error)
+        again = self._rpc(
+            "marketreview_get_day",
+            {
+                "schema_version": 1,
+                "trade_date": "2026-08-21",
+                "previous_trade_date": "2026-08-20",
+            },
+        )
+        self.assertEqual(again["counts"]["events"], 100)
+        self.assertEqual(again["events"][0]["name"], "已更新")
+        self.assertEqual(again["details"][0]["note"], "原明细")
+
+    def test_sqlite_and_supabase_get_summary_ladder_match(self) -> None:
+        fixture = json.loads(
+            (ROOT / "tests" / "fixtures" / "golden_2026_08_21.json").read_text(encoding="utf-8")
+        )
+        day = fixture["trade_date"]
+        previous = "2026-08-20"
+        previous_event = {
+            "market": "sh",
+            "code": "600000",
+            "name": "浦发银行",
+            "direction": "up",
+            "closed_at_limit": True,
+            "limit_rate_bp": 1000,
+            "streak_height": 1,
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            db_path = Path(raw) / "market.sqlite3"
+            with MarketReviewRepository(db_path) as repo:
+                repo.save_review(day, fixture["atoms"])
+                repo.save_price_limit_events(
+                    day,
+                    [PriceLimitEventInput(**event) for event in fixture["price_limit_events"]],
+                )
+                repo.save_price_limit_events(previous, [PriceLimitEventInput(**previous_event)])
+                repo.save_price_limit_event_details(day, fixture["event_details"])
+                sqlite_day = repo.read_day(day, previous)
+        self._rpc(
+            "marketreview_save_review",
+            {
+                "schema_version": 1,
+                "trade_date": day,
+                "batch_time": BATCH,
+                "fields": fixture["atoms"],
+            },
+        )
+        self._rpc(
+            "marketreview_save_events",
+            {
+                "schema_version": 1,
+                "trade_date": day,
+                "batch_time": BATCH,
+                "events": fixture["price_limit_events"],
+            },
+        )
+        self._rpc(
+            "marketreview_save_events",
+            {
+                "schema_version": 1,
+                "trade_date": previous,
+                "batch_time": BATCH,
+                "events": [previous_event],
+            },
+        )
+        self._rpc(
+            "marketreview_save_event_details",
+            {
+                "schema_version": 1,
+                "trade_date": day,
+                "batch_time": BATCH,
+                "details": fixture["event_details"],
+            },
+        )
+        cloud = SupabaseRepository(_PgRpcTransport(self)).read_day(day, previous)
+        self.assertEqual(_read_view(sqlite_day), _read_view(cloud))
 
     def _blank_review(self, day: str) -> dict:
         review = {name: None for name in sorted(ATOMIC_FIELD_NAMES)}

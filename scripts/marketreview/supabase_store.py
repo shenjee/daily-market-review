@@ -1119,11 +1119,14 @@ def _http_failure(status: int, detail: str, *, write: bool) -> RemoteStoreError:
         )
     if code:
         return RemoteStoreError(message or "云端拒绝了这次请求。", code=code)
-    if write and status >= 500:
+    if write and (status == 429 or status >= 500):
+        reason = "限流" if status == 429 else f"HTTP {status}"
         return RemoteStoreError(
-            f"云端写入结果未知（HTTP {status}），不能视为已回滚或已成功。",
+            f"云端写入结果未知（{reason}），不能视为已回滚或已成功，也不能立刻换一份新请求重试。",
             code="REMOTE_RESULT_UNKNOWN",
         )
+    if status == 429:
+        return RemoteStoreError("云端限流，读取没有成功。", code="REMOTE_UNAVAILABLE")
     return RemoteStoreError(f"云端请求失败（HTTP {status}）。", code="REMOTE_UNAVAILABLE")
 
 

@@ -97,6 +97,7 @@ def push_sync(
         conn = _open_db(sqlite_path, busy_timeout_ms)
         try:
             ledger_id = ensure_ledger(conn)
+            assert_ledger_file_identity(state_dir, ledger_id, sqlite_path, conn)
             if pending is not None:
                 if pending.get("kind") != "sync-push":
                     raise MarketReviewError(
@@ -142,6 +143,7 @@ def pull_sync(
         conn = _open_db(real_path, busy_timeout_ms)
         try:
             ledger_id = ensure_ledger(conn)
+            assert_ledger_file_identity(state_dir, ledger_id, real_path, conn)
             if pending is not None:
                 if pending.get("kind") != "sync-pull":
                     raise MarketReviewError(
@@ -169,6 +171,203 @@ def pull_sync(
             )
         finally:
             conn.close()
+
+
+def assert_ledger_file_identity(
+    state_dir: Path,
+    ledger_id: str,
+    sqlite_path: Path,
+    conn: sqlite3.Connection,
+) -> None:
+    """Keep identity across a path move. Stop when another live file still has it.
+
+    The file binding lives in the machine state directory. The database also
+    records which installation bound it, so copying only the database to another
+    machine stops instead of continuing as the original ledger. A missing or
+    unreadable binding stops the sync instead of being treated as a first join.
+    """
+    state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    _require_same_installation(state_dir, conn)
+    path = state_dir / "ledger-homes.json"
+    homes = _load_ledger_homes(path)
+    current = Path(os.path.realpath(sqlite_path))
+    recorded = homes.get(ledger_id)
+    if recorded is None:
+        homes[ledger_id] = str(current)
+        _write_ledger_homes(path, homes)
+        return
+    previous = Path(recorded)
+    if previous.exists() and _same_file(previous, current):
+        if str(previous) != str(current):
+            homes[ledger_id] = str(current)
+            _write_ledger_homes(path, homes)
+        return
+    if previous.exists() and _singleton_ledger_id(previous) == ledger_id:
+        raise MarketReviewError(
+            code="IDENTITY_MISMATCH",
+            message="独立副本与原账本共用身份，已停止，不会按首次接入重建。",
+        )
+    homes[ledger_id] = str(current)
+    _write_ledger_homes(path, homes)
+
+
+def _require_same_installation(state_dir: Path, conn: sqlite3.Connection) -> None:
+    current = _installation_id(state_dir)
+    row = conn.execute(
+        "SELECT bound_installation_id FROM sync_ledger_singleton WHERE id = 1"
+    ).fetchone()
+    bound = None if row is None or row[0] is None else str(row[0])
+    if bound == current:
+        return
+    if bound is not None:
+        raise MarketReviewError(
+            code="IDENTITY_MISMATCH",
+            message="独立副本与原账本共用身份，已停止，不会按首次接入重建。",
+        )
+    begin_immediate(conn)
+    try:
+        again = conn.execute(
+            "SELECT bound_installation_id FROM sync_ledger_singleton WHERE id = 1"
+        ).fetchone()
+        existing = None if again is None or again[0] is None else str(again[0])
+        if existing is None:
+            conn.execute(
+                """
+                UPDATE sync_ledger_singleton
+                SET bound_installation_id = ?
+                WHERE id = 1
+                """,
+                (current,),
+            )
+        elif existing != current:
+            raise MarketReviewError(
+                code="IDENTITY_MISMATCH",
+                message="独立副本与原账本共用身份，已停止，不会按首次接入重建。",
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def _installation_id(state_dir: Path) -> str:
+    path = state_dir / "installation-id"
+    if path.exists():
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise MarketReviewError(
+                code="IDENTITY_MISMATCH",
+                message="本机安装身份无法读取，已停止，不会按首次接入重建。",
+            ) from exc
+        if not value:
+            raise MarketReviewError(
+                code="IDENTITY_MISMATCH",
+                message="本机安装身份无法读取，已停止，不会按首次接入重建。",
+            )
+        return value
+    value = "install-" + uuid.uuid4().hex
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return _installation_id(state_dir)
+    try:
+        os.write(fd, (value + "\n").encode("utf-8"))
+        os.fsync(fd)
+    except OSError as exc:
+        raise MarketReviewError(
+            code="IDENTITY_MISMATCH",
+            message="本机安装身份无法保存，已停止，不会按首次接入重建。",
+        ) from exc
+    finally:
+        os.close(fd)
+    return value
+
+
+def _load_ledger_homes(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise MarketReviewError(
+            code="IDENTITY_MISMATCH",
+            message="账本绑定记录无法读取，已停止，不会按首次接入重建。",
+        ) from exc
+    homes = payload.get("ledgers") if isinstance(payload, dict) else None
+    if not isinstance(homes, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) and key and value for key, value in homes.items()
+    ):
+        raise MarketReviewError(
+            code="IDENTITY_MISMATCH",
+            message="账本绑定记录无法读取，已停止，不会按首次接入重建。",
+        )
+    return dict(homes)
+
+
+def _write_ledger_homes(path: Path, homes: Mapping[str, str]) -> None:
+    temporary = path.with_name(f".{path.name}.tmp")
+    data = json.dumps({"ledgers": homes}, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    try:
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, data)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(temporary, path)
+    except OSError as exc:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise MarketReviewError(
+            code="IDENTITY_MISMATCH",
+            message="账本绑定记录无法保存，已停止，不会按首次接入重建。",
+        ) from exc
+
+
+def _singleton_ledger_id(path: Path) -> str | None:
+    uri = f"{path.resolve().as_uri()}?mode=ro"
+    try:
+        conn = sqlite3.connect(uri, uri=True)
+    except sqlite3.Error as exc:
+        raise MarketReviewError(
+            code="IDENTITY_MISMATCH",
+            message="无法核验原账本身份，已停止，不会按首次接入重建。",
+        ) from exc
+    try:
+        row = conn.execute(
+            """
+            SELECT 1 FROM sqlite_master
+            WHERE type = 'table' AND name = 'sync_ledger_singleton'
+            """
+        ).fetchone()
+        if row is None:
+            return None
+        found = conn.execute(
+            "SELECT ledger_id FROM sync_ledger_singleton WHERE id = 1"
+        ).fetchone()
+    except sqlite3.Error as exc:
+        raise MarketReviewError(
+            code="IDENTITY_MISMATCH",
+            message="无法核验原账本身份，已停止，不会按首次接入重建。",
+        ) from exc
+    finally:
+        conn.close()
+    if found is None or found[0] is None:
+        return None
+    return str(found[0])
+
+
+def _same_file(left: Path, right: Path) -> bool:
+    try:
+        return _inode(left) == _inode(right)
+    except OSError as exc:
+        raise MarketReviewError(
+            code="IDENTITY_MISMATCH",
+            message="无法核验原账本身份，已停止，不会按首次接入重建。",
+        ) from exc
 
 
 def protect_snapshot(state_dir: Path, sqlite_path: Path) -> None:

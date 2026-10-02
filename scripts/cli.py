@@ -244,6 +244,22 @@ def _run_sync(args: argparse.Namespace, *, download: bool) -> int:
     return 1
 
 
+def cmd_sync_new_identity(args: argparse.Namespace) -> int:
+    from marketreview.sqlite_schema import connect, init_db
+    from marketreview.sync_ledger import ensure_sync_schema, fork_ledger_identity
+
+    sqlite_path = resolve_db_path(args.source if args.source is not None else args.db)
+    conn = connect(sqlite_path)
+    try:
+        ensure_sync_schema(conn)
+        init_db(conn)
+        ledger_id = fork_ledger_identity(conn)
+    finally:
+        conn.close()
+    _success({"sqlite_path": str(sqlite_path), "ledger_id": ledger_id})
+    return 0
+
+
 def cmd_sync_push(args: argparse.Namespace) -> int:
     return _run_sync(args, download=False)
 
@@ -340,6 +356,12 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--restore-cloud", action="append", default=[])
         command.add_argument("--delete-on-cloud", action="append", default=[])
         command.set_defaults(func=func)
+    identity_parser = sync_sub.add_parser(
+        "new-identity",
+        help="Assign a new ledger id to an independent copy and recheck its baselines",
+    )
+    identity_parser.add_argument("--source", default=None)
+    identity_parser.set_defaults(func=cmd_sync_new_identity)
 
     return parser
 

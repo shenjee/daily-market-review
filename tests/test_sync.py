@@ -21,7 +21,13 @@ from marketreview.schema import ATOMIC_FIELD_NAMES, PriceLimitEventInput
 from marketreview.sqlite_schema import connect
 from marketreview.sync_engine import GroupChoice, protect_snapshot, pull_sync, push_sync
 from marketreview.sync_groups import parse_group_ref, read_local_groups, same_evidence
-from marketreview.sync_ledger import ensure_sync_schema, get_operation, has_coverage, read_baselines
+from marketreview.sync_ledger import (
+    ensure_sync_schema,
+    fork_ledger_identity,
+    get_operation,
+    has_coverage,
+    read_baselines,
+)
 from marketreview.write_gate import read_pending
 
 
@@ -252,12 +258,12 @@ class SyncCase(unittest.TestCase):
         self.db = self.root / "market.sqlite3"
         self.cloud = FakeCloud()
 
-    def push(self, db: Path | None = None, **kwargs: Any) -> dict[str, Any]:
+    def push(self, db: Path | None = None, *, state_dir: Path | None = None, **kwargs: Any) -> dict[str, Any]:
         return push_sync(
             sqlite_path=db or self.db,
             transport=self.cloud,
             project_id=PROJECT,
-            state_dir=self.state,
+            state_dir=state_dir or self.state,
             busy_timeout_ms=200,
             **kwargs,
         )
@@ -320,6 +326,39 @@ class SyncCase(unittest.TestCase):
             return read_baselines(conn, project_id=PROJECT, ledger_id=report["ledger_id"])
         finally:
             conn.close()
+
+
+def _snapshot_database(source: Path, dest: Path) -> None:
+    origin = connect(source)
+    try:
+        clone = sqlite3.connect(dest)
+        try:
+            origin.backup(clone)
+        finally:
+            clone.close()
+    finally:
+        origin.close()
+
+
+def _checkpoint(path: Path) -> None:
+    conn = connect(path)
+    try:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        conn.close()
+
+
+def _ledger_id(path: Path) -> str:
+    conn = connect(path)
+    try:
+        row = conn.execute(
+            "SELECT ledger_id FROM sync_ledger_singleton WHERE id = 1"
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise AssertionError(path)
+    return str(row[0])
 
 
 def _stamp_review(path: Path, day: str, stamp: str) -> None:
@@ -950,6 +989,121 @@ class TestSyncGate(SyncCase):
         self.assertEqual(seen["sqlite_path"], self.db.resolve())
         self.assertEqual(seen["state_dir"], self.state)
         self.assertEqual((config / "config").read_text(encoding="utf-8").splitlines()[0], "backend=sqlite")
+
+    def test_copied_database_sharing_ledger_id_stops_before_any_rpc(self) -> None:
+        self.seed_review()
+        original = self.push()
+        calls = list(self.cloud.calls)
+        copied = self.root / "copied.sqlite3"
+        _snapshot_database(self.db, copied)
+        with self.assertRaises(MarketReviewError) as ctx:
+            self.push(copied)
+        self.assertEqual(ctx.exception.code, "IDENTITY_MISMATCH")
+        self.assertIn("不会按首次接入重建", str(ctx.exception))
+        self.assertEqual(self.cloud.calls, calls)
+        self.assertEqual(_ledger_id(copied), original["ledger_id"])
+        again = self.push()
+        self.assertEqual(again["ledger_id"], original["ledger_id"])
+
+    def test_copy_on_another_installation_stops_until_new_identity(self) -> None:
+        self.seed_review()
+        original = self.push()
+        copied = self.root / "other-machine.sqlite3"
+        _snapshot_database(self.db, copied)
+        other_state = self.root / "other-state"
+        calls = list(self.cloud.calls)
+        with self.assertRaises(MarketReviewError) as ctx:
+            self.push(copied, state_dir=other_state)
+        self.assertEqual(ctx.exception.code, "IDENTITY_MISMATCH")
+        self.assertIn("不会按首次接入重建", str(ctx.exception))
+        self.assertEqual(self.cloud.calls, calls)
+        self.assertEqual(_ledger_id(copied), original["ledger_id"])
+        conn = connect(copied)
+        try:
+            new_id = fork_ledger_identity(conn)
+        finally:
+            conn.close()
+        report = self.push(copied, state_dir=other_state)
+        self.assertEqual(report["ledger_id"], new_id)
+        self.assertNotEqual(new_id, original["ledger_id"])
+        home = self.push()
+        self.assertEqual(home["ledger_id"], original["ledger_id"])
+
+    def test_path_move_keeps_the_same_ledger_id(self) -> None:
+        self.seed_review()
+        original = self.push()
+        moved = self.root / "moved.sqlite3"
+        _checkpoint(self.db)
+        self.db.replace(moved)
+        report = self.push(moved)
+        self.assertEqual(report["status"], "completed")
+        self.assertEqual(report["ledger_id"], original["ledger_id"])
+
+    def test_new_identity_copies_baselines_and_corrupt_baseline_does_not_fork(self) -> None:
+        self.seed_review()
+        original = self.align()
+        copied = self.root / "independent.sqlite3"
+        _snapshot_database(self.db, copied)
+        conn = connect(copied)
+        try:
+            new_id = fork_ledger_identity(conn)
+        finally:
+            conn.close()
+        self.assertNotEqual(new_id, original["ledger_id"])
+        self.assertEqual(_ledger_id(self.db), original["ledger_id"])
+        self.assertEqual(set(self.baselines(original)), set(self.baselines({"ledger_id": new_id}, copied)))
+        forked = self.push(copied)
+        self.assertEqual(forked["ledger_id"], new_id)
+        self.assertNotIn("marketreview_sync_commit", self.cloud.calls)
+        conn = connect(copied)
+        try:
+            conn.execute(
+                "UPDATE sync_baseline SET group_payload = '{not-json' WHERE ledger_id = ?",
+                (new_id,),
+            )
+            conn.commit()
+            with self.assertRaises(MarketReviewError) as ctx:
+                fork_ledger_identity(conn)
+            self.assertEqual(ctx.exception.code, "BASELINE_CORRUPT")
+            self.assertEqual(
+                conn.execute(
+                    "SELECT ledger_id FROM sync_ledger_singleton WHERE id = 1"
+                ).fetchone()[0],
+                new_id,
+            )
+        finally:
+            conn.close()
+
+    def test_unreadable_ledger_binding_stops_without_rebuilding(self) -> None:
+        self.seed_review()
+        original = self.push()
+        binding = self.state / "ledger-homes.json"
+        binding.write_text("{", encoding="utf-8")
+        with self.assertRaises(MarketReviewError) as ctx:
+            self.push()
+        self.assertEqual(ctx.exception.code, "IDENTITY_MISMATCH")
+        self.assertIn("不会按首次接入重建", str(ctx.exception))
+        self.assertEqual(_ledger_id(self.db), original["ledger_id"])
+
+    def test_cli_new_identity_does_not_call_cloud(self) -> None:
+        self.seed_review()
+        original = self.push()
+        copied = self.root / "cli-copy.sqlite3"
+        _snapshot_database(self.db, copied)
+        buffer = __import__("io").StringIO()
+        calls = list(self.cloud.calls)
+        with mock.patch("cli._command_state_dir", lambda: self.state):
+            with mock.patch(
+                "marketreview.backend.load_supabase_settings",
+                side_effect=AssertionError("new-identity must not read cloud settings"),
+            ):
+                with mock.patch("sys.stdout", buffer):
+                    rc = cli.main(["sync", "new-identity", "--source", str(copied)])
+        self.assertEqual(rc, 0)
+        payload = json.loads(buffer.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertNotEqual(payload["data"]["ledger_id"], original["ledger_id"])
+        self.assertEqual(self.cloud.calls, calls)
 
     def test_open_pending_blocks_a_new_push(self) -> None:
         self.seed_review()

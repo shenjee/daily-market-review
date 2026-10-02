@@ -36,6 +36,30 @@ BUSINESS_TABLES = (
     "daily_price_limit_event_reason",
     "daily_price_limit_event_sector",
 )
+SYNC_TABLES = (
+    "sync_ledger_singleton",
+    "sync_baseline",
+    "sync_coverage",
+    "sync_authorization",
+    "sync_operation",
+)
+MANUAL_BACKUP_POLICY = {
+    "schedule": [
+        "每个有写入的交易日结束后手动导出",
+        "长假前额外导出",
+        "迁移前额外导出",
+        "schema 升级前额外导出",
+    ],
+    "retention": {
+        "keep_recent": 30,
+        "keep_each_month_last": True,
+        "migration_snapshot": "长期保存，修剪时不删除",
+        "failed_export": "不覆盖上一份有效备份",
+    },
+    "scheduler": "没有定时任务，必须手动执行",
+    "cloud_command": "python3 scripts/pg_backup.py backup --database <db> [--keep-long-term]",
+    "sqlite_pre_migration": "两机原库一致性备份单独登记，不放进云端备份的修剪目录，不覆盖已有文件",
+}
 
 
 def sha256_file(path: Path) -> str:
@@ -84,12 +108,34 @@ def online_backup(source: Path, dest: Path) -> None:
         src.close()
 
 
+def sync_census(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Count sync metadata only. Absence is recorded; it is not a confirmed-empty baseline."""
+    present = {
+        str(row[0])
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    tables: dict[str, dict[str, Any]] = {}
+    for name in SYNC_TABLES:
+        if name not in present:
+            tables[name] = {"present": False, "rows": 0}
+            continue
+        rows = int(conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0])
+        tables[name] = {"present": True, "rows": rows}
+    identity = tables["sync_ledger_singleton"]
+    return {
+        "tables": tables,
+        "ledger_identity_present": bool(identity["present"] and identity["rows"]),
+        "note": "只统计同步表是否存在和行数，不读取业务行或载荷。没有这些表表示原库尚未建立同步身份。",
+    }
+
+
 def inventory(source: Path, backup: Path, role: str) -> dict[str, Any]:
     conn = sqlite3.connect(f"file:{backup}?mode=ro", uri=True)
     try:
         conn.row_factory = sqlite3.Row
         integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
         fk = [dict(r) for r in conn.execute("PRAGMA foreign_key_check")]
+        sync_metadata = sync_census(conn)
         row_counts = {}
         for table in BUSINESS_TABLES:
             row_counts[table] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
@@ -122,6 +168,7 @@ def inventory(source: Path, backup: Path, role: str) -> dict[str, Any]:
         "wal_size": wal.stat().st_size if wal.exists() else None,
         "tables": list(BUSINESS_TABLES),
         "row_counts": row_counts,
+        "sync_metadata": sync_metadata,
         "integrity_check": integrity,
         "foreign_key_check": fk,
         "samples": {

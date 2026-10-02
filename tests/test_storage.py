@@ -650,6 +650,11 @@ class TestSupabaseRepository(unittest.TestCase):
         forbidden = _http_failure(401, '{"message":"bad key ' + secret + '"}', write=False)
         self.assertEqual(forbidden.code, "REMOTE_FORBIDDEN")
         self.assertNotIn(secret, str(forbidden))
+        limited_write = _http_failure(429, "{}", write=True)
+        self.assertEqual(limited_write.code, "REMOTE_RESULT_UNKNOWN")
+        self.assertIn("不能视为已回滚", str(limited_write))
+        limited_read = _http_failure(429, "{}", write=False)
+        self.assertEqual(limited_read.code, "REMOTE_UNAVAILABLE")
         unknown = _transport_failure(
             urllib.error.URLError(f"timed out {secret}"),
             secret=secret,

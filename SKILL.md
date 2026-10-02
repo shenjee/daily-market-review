@@ -184,7 +184,9 @@ CLI 输出统一为：
 
 ## 云端配置（接入 Supabase 时）
 
-日常默认仍为本地 SQLite，可不填云端凭证。首次使用云端能力（`sync` 或 `backend=supabase`）且本机缺少配置文件时，CLI 会**自动**从 Skill 目录复制模板到 `~/.marketreview/`（已有文件绝不覆盖），并报错提示需填写的字段。Agent 不得代写真实密钥进仓库或对话。也可手工执行：
+用户已确认：日常是整理完数据后写入 Supabase。历史账本还在本地，正式迁移前 `CLOUD_DEFAULT_ENABLED` 仍关闭，所以当前进程默认还是 SQLite，可不填云端凭证。现在打开开关会把新的一天写进还没接上旧数据的云端。选用 `backend=supabase` 时如果缺 URL 或 Secret，报错停止，不打开 SQLite。显式 `--backend sqlite` 不请求云端。`--db` 不能把默认后端改成 SQLite。
+
+首次使用云端能力（`sync` 或 `backend=supabase`）且本机缺少配置文件时，CLI 会**自动**从 Skill 目录复制模板到 `~/.marketreview/`（已有文件绝不覆盖），并报错提示需填写的字段。Agent 不得代写真实密钥进仓库或对话。也可手工执行：
 
 ```bash
 mkdir -p ~/.marketreview
@@ -203,10 +205,13 @@ chmod 600 ~/.marketreview/supabase.secret
 ```bash
 python3 "<skill-dir>/scripts/cli.py" sync push [--source <sqlite>]
 python3 "<skill-dir>/scripts/cli.py" sync pull [--target <sqlite>]
+python3 "<skill-dir>/scripts/cli.py" sync new-identity --source <sqlite>
 ```
 
+  复制出的库仍带着原账本身份。在它独立写入前必须执行 `sync new-identity`；基线损坏时不会改身份，也不会当成首次接入。只移动路径不需要新身份。
+
   冲突选择：`--keep-cloud` / `--adopt-local`；本地删除：`--restore-cloud` / `--delete-on-cloud`。组引用形如 `review:2026-08-21` 或 `event:2026-08-21:sh:600519`。不要用日常 save 命令循环搬运数据。
-- 云端库正式备份（管理连接 / 数据库密码，非 Secret）：`python3 "<skill-dir>/scripts/pg_backup.py" backup|restore-blank|verify`；产物在 `~/.marketreview/backups/supabase/`，须含 schema 与 public wrappers。日常默认仍为 SQLite，正式切换前不要改默认后端。
+- 云端库正式备份（管理连接 / 数据库密码，非 Secret）：`python3 "<skill-dir>/scripts/pg_backup.py" backup|restore-blank|verify`；产物在 `~/.marketreview/backups/supabase/`，须含 schema 与 public wrappers。没有定时任务。每个有写入的交易日结束后手动导出；长假前、迁移前、schema 升级前再导出一份。保留最近 30 份和每月最后一份。迁移前加 `--keep-long-term`，修剪时不删除。导出失败不覆盖上一份有效备份。两机原库的一致性备份另行长期登记，不放进这个修剪目录。日常目标是整理后写入 Supabase；历史账本迁移完成前不要改默认后端。
 - 方向替换超时后执行 `verify-pending`；不得在本机待核验未关闭时换机续写
 
 ## 边界

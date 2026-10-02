@@ -1,5 +1,49 @@
 # Supabase 环境实测记录
 
+## 2026-10-02 合同第 5 项：约一百条批量写入与限流
+
+未改 `CLOUD_DEFAULT_ENABLED`，未连接生产项目。隔离 PostgreSQL 17.11（`/tmp/dmr-pg-rpc-v1`，端口 55432）上 `test_hundred_event_batch_updates_identity_and_keeps_details` 通过：一次 `marketreview_save_events` 写入 100 条；按唯一键把 `000001` 改名后 `created_at` 仍是原批次、`updated_at` 是新批次；原明细和板块还在；同一批重复身份返回 `DUPLICATE_IDENTITY`，条数和明细不变。测完已停止该实例。
+
+写入遇到 HTTP 429 记为 `REMOTE_RESULT_UNKNOWN`，不能当成已回滚，也不能立刻换一份新请求重试。读取遇到 429 仍是 `REMOTE_UNAVAILABLE`。回归：`tests/test_storage.py` 的 HTTP 错误用例。全套 `python3 -m unittest discover -s tests -p 'test_*.py'` 在该隔离实例上 209 项通过。
+
+## 2026-10-02 合同第 5 项：#11 独立副本共用身份
+
+未改 `CLOUD_DEFAULT_ENABLED`，未读生产 SQLite，未改云端。#8/#9/#11 仍不关闭。
+
+同一状态目录里，第二份仍带着原 `ledger_id` 的库在任何 RPC 之前停止（`IDENTITY_MISMATCH`，不按首次接入重建）。只改路径仍用原身份。换一份状态目录（另一台机器只拿走数据库）同样停止。`sync new-identity --source` 在基线可读时换成新身份并清掉安装绑定；基线损坏则身份不变。回归：`tests/test_sync.py` 32 项通过。
+
+把状态目录和数据库一起复制到另一台机器，本地仍看不到「两份同时活着」。这条不靠云端协议补，本轮没有改冻结合同。
+
+## 2026-10-02 合同第 5 项：#11 同步完整快照 >1000
+
+Docker 守护进程未启动。用隔离数据目录 `/tmp/dmr-pg-rpc-v1`、PostgreSQL **17.11**、端口 55432 跑 `tests/test_pg_rpc_v1.py`（`psql`，无 psycopg）。`test_sync_snapshot_over_1000_is_one_complete_jsonb` 通过：一次 `marketreview_sync_snapshot` 返回 `complete=true`、1201 条事件、代码从 `000001` 到 `001201`、两条原因按 `position` 为「先」「后」，计数与数组长度一致。同文件其余 RPC 测试一并通过。测完已停止该临时实例。这不是线上 Data API 列表容量，也不代替云端再测一遍。
+
+## 2026-10-02 合同第 5 项：同一数据集 SQLite / Supabase 对照
+
+同一黄金夹具 `tests/fixtures/golden_2026_08_21.json`，加上前一交易日 `2026-08-20` 的一条涨停。SQLite 走 `MarketReviewRepository`，云端形状走隔离 PG17.11 的 `marketreview_get_day` 和 `SupabaseRepository`。两边的 `review`、事件、明细、`summary`、`missing_fields`、`ladder` 一致。测试：`test_sqlite_and_supabase_get_summary_ladder_match`。未连接生产项目。
+
+## 2026-10-02 合同第 5 项：#9 长期迁移前清单
+
+未改 `CLOUD_DEFAULT_ENABLED`，未打开生产 SQLite，未改写已复核的一致性备份和云端备份目录。
+
+手动策略写进 `SKILL.md`，并与 `prune_backups` 一致：有写入的交易日结束、长假前、迁移前、schema 升级前手动导出；最近 30 份加每月最后一份；`--keep-long-term` 为 `migration-snapshot`，修剪不删除；失败不覆盖。没有定时任务。
+
+长期登记：`~/.marketreview/acceptance-evidence/20261002T093737Z_step5_migration_register/`（`migration_register.json` 的 SHA-256 `e54cf0ac54d277045a34d01be8ba0e544d7ac13af6be4a9f5980172c725fbf9d`）。
+
+| 对象 | 结果 |
+| --- | --- |
+| 云端 `20261001T124829Z`、`20261001T133739Z` | 已是 `migration-snapshot`，revision 21，`BACKUP_OK` 在 |
+| M3 原库一致性副本 | 五表 31/3048/1175/1026/590；五张同步表都不存在 |
+| M1 原库一致性副本 | 五表 1/89/0/0/0；五张同步表都不存在 |
+
+两份原库副本没有账本身份、基线、覆盖标记、授权或操作结果，因为源库里就没有这些表。清单写明「尚未建立同步身份」，不把缺表当成已确认不存在的基线。以后的一致性备份会把同步表普查写进 `inventory.json`。回归：`tests/test_acceptance_migration_register.py`。
+
+## 2026-10-02 合同第 5 项：#8 持续集成
+
+新增 `.github/workflows/tests.yml`。推送和拉取请求时在 Ubuntu 上安装 PostgreSQL 工具，用 `initdb --auth=trust` 在临时目录启动隔离实例，端口 55432，然后执行 `python3 -m unittest discover -s tests -p 'test_*.py'`。工作流文件里没有 Secret、数据库密码、`secrets.` 或 `~/.marketreview`。`tests/test_ci_workflow.py` 锁住这些约束。
+
+这条流水线还没有在 GitHub 上跑过，因为本轮没有推送。本地 PostgreSQL 上的事务、权限、同步幂等和 1201 条快照测试此前已经通过。
+
 ## 2026-10-01 合同第 4 项：M3 准备 + JWT + M1 第二份备份 + 真双机
 
 本机：MacBook Pro **Mac15,6 / Apple M3 Pro**；项目 `nyscgdxrctwchbzclszt`（ACTIVE_HEALTHY）。**未**改 `CLOUD_DEFAULT_ENABLED`；**未**导入正式生产账本。

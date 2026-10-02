@@ -23,7 +23,8 @@ DDL = (
     CREATE TABLE IF NOT EXISTS sync_ledger_singleton (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         ledger_id TEXT NOT NULL,
-        metadata_schema_version INTEGER NOT NULL
+        metadata_schema_version INTEGER NOT NULL,
+        bound_installation_id TEXT
     )
     """,
     """
@@ -103,10 +104,77 @@ def ensure_sync_schema(conn: sqlite3.Connection) -> None:
     try:
         for statement in DDL:
             conn.execute(statement)
+        columns = {
+            str(row[1])
+            for row in conn.execute("PRAGMA table_info(sync_ledger_singleton)")
+        }
+        if "bound_installation_id" not in columns:
+            conn.execute(
+                "ALTER TABLE sync_ledger_singleton ADD COLUMN bound_installation_id TEXT"
+            )
         conn.commit()
     except Exception:
         conn.rollback()
         raise
+
+
+def fork_ledger_identity(conn: sqlite3.Connection) -> str:
+    """Give an independent copy its own ledger id and recheck saved baselines.
+
+    A copied database keeps the original id until this runs. Verification failure
+    leaves the id unchanged and does not invent a first-join ledger.
+    """
+    ensure_sync_schema(conn)
+    begin_immediate(conn)
+    try:
+        row = conn.execute(
+            "SELECT ledger_id FROM sync_ledger_singleton WHERE id = 1"
+        ).fetchone()
+        if row is None:
+            raise MarketReviewError(
+                code="IDENTITY_MISMATCH",
+                message="还没有账本身份，不能为独立副本建立新身份。",
+            )
+        old = str(row["ledger_id"])
+        _assert_identity(conn, old)
+        _verify_ledger_baselines(conn, old)
+        new = "ledger-" + uuid.uuid4().hex
+        for table in (
+            "sync_baseline",
+            "sync_coverage",
+            "sync_authorization",
+            "sync_operation",
+        ):
+            conn.execute(
+                f"UPDATE {table} SET ledger_id = ? WHERE ledger_id = ?",
+                (new, old),
+            )
+        conn.execute(
+            """
+            UPDATE sync_ledger_singleton
+            SET ledger_id = ?, bound_installation_id = NULL
+            WHERE id = 1
+            """,
+            (new,),
+        )
+        _assert_identity(conn, new)
+        _verify_ledger_baselines(conn, new)
+        conn.commit()
+        return new
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def _verify_ledger_baselines(conn: sqlite3.Connection, ledger_id: str) -> None:
+    projects = conn.execute(
+        """
+        SELECT DISTINCT project_id FROM sync_baseline WHERE ledger_id = ?
+        """,
+        (ledger_id,),
+    ).fetchall()
+    for project in projects:
+        read_baselines(conn, project_id=str(project["project_id"]), ledger_id=ledger_id)
 
 
 def ensure_ledger(conn: sqlite3.Connection) -> str:

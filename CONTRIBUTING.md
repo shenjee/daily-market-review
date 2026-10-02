@@ -55,6 +55,8 @@ EOF
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
+GitHub Actions（`.github/workflows/tests.yml`）跑同一条命令。流水线自建隔离 PostgreSQL，用 trust 本机连接，不读取 Secret、数据库密码或 `~/.marketreview`。
+
 ## 发布包内容
 
 最终用户版本包命名为 `daily-market-review-vX.Y.Z.zip`，解压后根目录为 `daily-market-review/`，应只包含运行所需内容：
