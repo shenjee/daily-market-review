@@ -46,7 +46,9 @@
 | 未知结果恢复 | `unknown_result_m3.json`（29→30）+ `unknown_result_m1.json`（30→31） | 同 operation_id 恢复；稳定 push 不重复推进；哨兵已清 |
 | 哨兵清理 | `cleanup_unknown_sentinel.json` | `2099-10-05/06` 清空；`2099-09-*` 样例仍在；revision=35 |
 
-**第 4 项开发侧四条审查缺口已补齐；整项勾选仍待独立审查，不得提前勾选。** #8/#9 整体、#10 仍未通过。
+**第 4 项独立复审通过（2026-10-02），[#3](https://github.com/shenjee/daily-market-review/issues/3) 已勾选。** 初审四项缺口关闭。复审记录：`/private/tmp/daily-market-review-step4-reaudit-20261002.md`。
+
+下一步：合同第 5 项 — 按原 #8/#9/#11 验收项逐条收口；这些 issues 尚未整体关闭，#10 未通过。
 
 ---
 
