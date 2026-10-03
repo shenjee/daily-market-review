@@ -4,7 +4,7 @@
 
 父提交 `45eb7ba21d16693160975da336f9780f1a54704a`（jsonb 整值 double 在备份校验前归一为 float；`sync_commit` / `sync_snapshot` 语句超时 60 秒，其余接口仍 8 秒）。云端该迁移已执行。本轮把 `CLOUD_DEFAULT_ENABLED` 设为 True，并在 M3 新建 `~/.marketreview/config`：`backend=supabase`，URL 主机 `nyscgdxrctwchbzclszt.supabase.co`。切换前 M3 没有 `config` 文件，URL 与 Secret 在旧的 `supabase.config`；Secret 仍只留在该文件，未写入 `config`、仓库或本记录。
 
-M3（Mac15,6）用仓库本身。M1 保持用户态，不放 git 仓库；安装命令见当次交付说明，装的是包含本次切换的提交，不是只装父提交。
+M3（Mac15,6）用仓库 `2b307b51e27f6503146166b2e83a55bf2c6ec88b`。M1 的账本已在同项目里，不再上传、不再把云端拉回两台日常库。
 
 未要求两机本地库互相同步，也未把云端全量 pull 回日常库。下列原件未改：
 
@@ -25,7 +25,9 @@ M3 验证（日期 `2026-09-29`；验证时日常 SQLite 权限设为 `000`，�
 | 断网（`HTTPS_PROXY=http://127.0.0.1:9`，且 SQLite 不可读） | `REMOTE_UNAVAILABLE`（Connection refused），没有改读 SQLite |
 | 日常写入 | `save-review` 把同日 `advancing_count` 原值 2927 再写一次。读回仍是 2927。`probe` revision 42 → 43（该 RPC 对非空字段会记一次更新）。本地库哈希未变 |
 
-#10 的两项跟踪仍不勾选。M1 的安装、`backend=supabase` 和同样三项验证尚未在本机执行。
+M1 数据核对（只读，未改云端、未改两份原库）：云端 `2026-09-23` 有复盘，事件 89（涨停 77、跌停 12）。M1 原库备份只有这一天，事件数与方向相同。M3 日常库没有这一天的事件。因此 M1 本地账本已经在 Supabase，第 7 项不再做第二次同步。
+
+#10 的两项跟踪仍不勾选，等独立复查。
 
 ## 2026-10-02 合同第 5 项正式收口
 
