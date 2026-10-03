@@ -91,4 +91,4 @@ daily-market-review/
 3. 确认运行时说明文件不含开发文档目录字面量（由 `tests/test_runtime_docs.py` 覆盖；也可手动扫描 `SKILL.md`、`README.md` 和 `references/`）。
 4. 按上述目录结构生成 `daily-market-review-vX.Y.Z.zip`。
 5. 创建 GitHub Release，上传版本包（不要依赖 GitHub 自动生成的 Source code 压缩包）。
-6. 用解压后的 ZIP 独立安装测试一次，确认不依赖仓库中的额外文件（如 `tests/`）；并确认 `scripts/pg_backup.py` 在默认路径下能读到包内 `contracts/` 与 `sql/migrations/`（可用 `--help` / 合同文件存在性检查，不必连真实云端）。安装核对要记录 Skill 目录绝对路径、`scripts/cli.py` 的 SHA-256，以及 `cli.py --help` 里能看到 `--backend` 和 `sync`。仓库工作副本不能代替这份安装证明。v0.3.4 发布包没有云端运行文件，不能当作当前交付包。
+6. 用解压后的 ZIP 独立安装测试一次，确认不依赖仓库中的额外文件（如 `tests/`）；并确认 `scripts/pg_backup.py` 在默认路径下能读到包内 `contracts/` 与 `sql/migrations/`（可用 `--help` / 合同文件存在性检查，不必连真实云端）。v0.3.4 发布包没有云端运行文件，不能当作当前交付包。验收不要求逐台交安装清单。

@@ -1,5 +1,20 @@
 # Supabase 环境实测记录
 
+## 2026-10-04 第 7 项收口范围
+
+用户撤销逐台安装追踪、Agent 使用记录和额外生产写测。这些不再是 #10 的关闭条件，已有测试覆盖的场景不重复演练。
+
+收口只看 `83c0df001bc4c9d956492dc58529b248d87cc4b9`：
+
+| 项 | 结果 |
+| --- | --- |
+| 测试 | GitHub Actions [37135938788](https://github.com/shenjee/daily-market-review/actions/runs/37135938788) success。本地测试显式 `--backend sqlite`；缺配置连续调用停止 |
+| 用户包 | `~/.marketreview/acceptance-evidence/20261003T161202Z_step7_user_package/`。zip SHA-256 `19ceab20f6aad4fb5effef2884132cc6e38dc0012e0fc33a629dbd9db8c3e5de`。包内 `scripts/cli.py` SHA-256 `5a8bc2e0244b3ab6e8c25d8cb78f044a467c6ede2b5b62e117ded212560d5294`，与该提交一致。四个迁移文件都在 |
+| 默认行为 | `CLOUD_DEFAULT_ENABLED=True`。缺 URL/Secret、鉴权失败或断网报错停止，不打开 SQLite。`--backend sqlite` 使用本地库且不请求云端。`--db` 单独出现不能改选 SQLite |
+| 说明 | `README.md`、`SKILL.md` 写明权威账本、失败不回退、显式本地库，以及先停写再核对差异的回退。备份命令是 `pg_backup.py` 的 `backup` / `restore-blank` / `verify`，恢复要在空白库上核验 |
+
+#10 仍等按这个范围复核，先不勾选。
+
 ## 2026-10-03 第 7 项独立审查未通过
 
 审查对象 `2b307b51e27f6503146166b2e83a55bf2c6ec88b`。结论保持 #10 OPEN。报告 `/private/tmp/daily-market-review-step7-audit-20261003.md`，评论 [ #3 ](https://github.com/shenjee/daily-market-review/issues/3#issuecomment-5970144444)。
