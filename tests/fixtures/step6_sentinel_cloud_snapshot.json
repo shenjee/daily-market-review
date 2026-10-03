@@ -1,0 +1,225 @@
+{
+  "format_version": 1,
+  "schema_version": 1,
+  "complete": true,
+  "revision": 35,
+  "reviews": [
+    {
+      "pe_cy": null,
+      "pe_sh": 12.5,
+      "pe_sz": 11,
+      "pe_all": null,
+      "created_at": "2026-10-01T10:24:42+00:00",
+      "trade_date": "2099-09-01",
+      "updated_at": "2026-10-01T10:24:42+00:00",
+      "cy_index_close": null,
+      "pullback_count": null,
+      "sh_index_close": null,
+      "sz_index_close": null,
+      "advancing_count": 123,
+      "avg_stock_price": 18.75,
+      "declining_count": 456,
+      "float_market_cap": null,
+      "total_market_cap": null,
+      "margin_balance_bj": null,
+      "margin_balance_sh": null,
+      "margin_balance_sz": null,
+      "median_change_pct": null,
+      "turnover_amount_bj": null,
+      "turnover_amount_cy": null,
+      "turnover_amount_sh": 123000000000,
+      "turnover_amount_sz": null,
+      "cy_index_prev_close": null,
+      "sh_index_prev_close": null,
+      "sz_index_prev_close": null
+    },
+    {
+      "pe_cy": null,
+      "pe_sh": 9.9,
+      "pe_sz": null,
+      "pe_all": null,
+      "created_at": "2026-10-01T10:24:46+00:00",
+      "trade_date": "2099-09-02",
+      "updated_at": "2026-10-01T10:24:46+00:00",
+      "cy_index_close": null,
+      "pullback_count": 7,
+      "sh_index_close": null,
+      "sz_index_close": null,
+      "advancing_count": 1,
+      "avg_stock_price": null,
+      "declining_count": null,
+      "float_market_cap": null,
+      "total_market_cap": null,
+      "margin_balance_bj": null,
+      "margin_balance_sh": null,
+      "margin_balance_sz": null,
+      "median_change_pct": null,
+      "turnover_amount_bj": null,
+      "turnover_amount_cy": null,
+      "turnover_amount_sh": null,
+      "turnover_amount_sz": null,
+      "cy_index_prev_close": null,
+      "sh_index_prev_close": null,
+      "sz_index_prev_close": null
+    }
+  ],
+  "events": [
+    {
+      "code": "600519",
+      "name": "贵州茅台",
+      "market": "sh",
+      "direction": "up",
+      "created_at": "2026-10-01T10:24:44+00:00",
+      "trade_date": "2099-09-01",
+      "updated_at": "2026-10-01T10:24:44+00:00",
+      "limit_rate_bp": 1000,
+      "streak_height": 2,
+      "closed_at_limit": true
+    },
+    {
+      "code": "000001",
+      "name": "平安银行",
+      "market": "sz",
+      "direction": "down",
+      "created_at": "2026-10-01T10:24:44+00:00",
+      "trade_date": "2099-09-01",
+      "updated_at": "2026-10-01T10:24:44+00:00",
+      "limit_rate_bp": 1000,
+      "streak_height": 0,
+      "closed_at_limit": false
+    },
+    {
+      "code": "830799",
+      "name": "备份样例",
+      "market": "bj",
+      "direction": "up",
+      "created_at": "2026-10-01T10:24:48+00:00",
+      "trade_date": "2099-09-02",
+      "updated_at": "2026-10-01T10:24:48+00:00",
+      "limit_rate_bp": 3000,
+      "streak_height": 1,
+      "closed_at_limit": true
+    }
+  ],
+  "details": [
+    {
+      "code": "600519",
+      "note": "backup-sample-#9",
+      "market": "sh",
+      "direction": "up",
+      "is_leader": true,
+      "created_at": "2026-10-01T10:24:45+00:00",
+      "open_price": 1800.5,
+      "trade_date": "2099-09-01",
+      "updated_at": "2026-10-01T10:24:45+00:00",
+      "turnover_rate": 0.0123,
+      "auction_amount": null,
+      "previous_close": 1700,
+      "turnover_amount": 550000000,
+      "previous_turnover_amount": null
+    },
+    {
+      "code": "000001",
+      "note": null,
+      "market": "sz",
+      "direction": "down",
+      "is_leader": false,
+      "created_at": "2026-10-01T10:24:45+00:00",
+      "open_price": null,
+      "trade_date": "2099-09-01",
+      "updated_at": "2026-10-01T10:24:45+00:00",
+      "turnover_rate": null,
+      "auction_amount": null,
+      "previous_close": null,
+      "turnover_amount": 220000000,
+      "previous_turnover_amount": null
+    },
+    {
+      "code": "830799",
+      "note": null,
+      "market": "bj",
+      "direction": "up",
+      "is_leader": null,
+      "created_at": "2026-10-01T10:24:49+00:00",
+      "open_price": null,
+      "trade_date": "2099-09-02",
+      "updated_at": "2026-10-01T10:24:49+00:00",
+      "turnover_rate": null,
+      "auction_amount": 1000000,
+      "previous_close": null,
+      "turnover_amount": null,
+      "previous_turnover_amount": null
+    }
+  ],
+  "sectors": [
+    {
+      "code": "600519",
+      "value": "白酒",
+      "market": "sh",
+      "position": 0,
+      "direction": "up",
+      "trade_date": "2099-09-01"
+    },
+    {
+      "code": "600519",
+      "value": "消费",
+      "market": "sh",
+      "position": 1,
+      "direction": "up",
+      "trade_date": "2099-09-01"
+    },
+    {
+      "code": "000001",
+      "value": "银行",
+      "market": "sz",
+      "position": 0,
+      "direction": "down",
+      "trade_date": "2099-09-01"
+    },
+    {
+      "code": "830799",
+      "value": "专精特新",
+      "market": "bj",
+      "position": 0,
+      "direction": "up",
+      "trade_date": "2099-09-02"
+    }
+  ],
+  "reasons": [
+    {
+      "code": "600519",
+      "value": "业绩预增",
+      "market": "sh",
+      "position": 0,
+      "direction": "up",
+      "trade_date": "2099-09-01"
+    },
+    {
+      "code": "600519",
+      "value": "板块联动",
+      "market": "sh",
+      "position": 1,
+      "direction": "up",
+      "trade_date": "2099-09-01"
+    },
+    {
+      "code": "830799",
+      "value": "北交所样例",
+      "market": "bj",
+      "position": 0,
+      "direction": "up",
+      "trade_date": "2099-09-02"
+    }
+  ],
+  "history": [],
+  "sync_results": [],
+  "counts": {
+    "reviews": 2,
+    "events": 3,
+    "details": 3,
+    "sectors": 4,
+    "reasons": 3,
+    "history": 0,
+    "sync_results": 0
+  }
+}
