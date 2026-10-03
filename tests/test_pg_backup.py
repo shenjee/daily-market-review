@@ -86,8 +86,8 @@ def _bundle(root: Path, created_at: str, retention: str = "daily") -> None:
 
 
 class TestBackupPolicy(unittest.TestCase):
-    def test_cloud_default_stays_sqlite_and_tool_ignores_secret_files(self) -> None:
-        self.assertFalse(CLOUD_DEFAULT_ENABLED)
+    def test_cloud_default_is_supabase_and_tool_ignores_secret_files(self) -> None:
+        self.assertTrue(CLOUD_DEFAULT_ENABLED)
         source = (ROOT / "scripts" / "marketreview" / "pg_backup.py").read_text(encoding="utf-8")
         self.assertNotIn("supabase.secret", source)
         self.assertNotIn("SUPABASE_SECRET", source)

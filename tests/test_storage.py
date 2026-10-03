@@ -20,6 +20,7 @@ import _bootstrap  # noqa: F401
 from marketreview.backend import (
     CLOUD_DEFAULT_ENABLED,
     CONTRACT_DEFAULT_BACKEND,
+    effective_default_backend,
     load_supabase_settings,
     resolve_backend_name,
 )
@@ -197,9 +198,10 @@ def _cloud_repo(transport: FakeTransport, root: Path) -> SupabaseRepository:
 
 
 class TestBackendSelection(unittest.TestCase):
-    def test_contract_default_is_supabase_and_daily_switch_is_still_off(self) -> None:
+    def test_contract_default_is_supabase_and_daily_switch_is_on(self) -> None:
         self.assertEqual(CONTRACT_DEFAULT_BACKEND, "supabase")
-        self.assertFalse(CLOUD_DEFAULT_ENABLED)
+        self.assertTrue(CLOUD_DEFAULT_ENABLED)
+        self.assertEqual(effective_default_backend(), "supabase")
 
     def test_explicit_backend_overrides_config_and_default(self) -> None:
         self.assertEqual(

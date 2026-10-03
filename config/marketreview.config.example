@@ -9,8 +9,9 @@
 # 不要把填好的文件提交进 Git、打进发布包，或贴到日志 / Issue。
 
 # backend 只能是 sqlite 或 supabase。
-# 正式切换（#10）前省略或保持 sqlite；切换后改为 supabase。
-backend=sqlite
+# 未写这一行时，进程默认是 supabase。模板写明 supabase，避免复制后把默认盖回 sqlite。
+# 只读本地账本时用命令行 --backend sqlite，不要把这一行改回 sqlite 来当日常默认。
+backend=supabase
 
 # 项目 URL（控制台 Project URL），不含密钥。
 supabase_url=https://PROJECT_REF.supabase.co

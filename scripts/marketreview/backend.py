@@ -1,8 +1,10 @@
 """Backend selection and local Supabase settings.
 
 Priority is explicit ``--backend``, then ``backend`` in the local config file,
-then the process default. The contract default is ``supabase``. The daily CLI
-keeps ``sqlite`` until the formal switch flips ``CLOUD_DEFAULT_ENABLED``.
+then the process default. The contract default is ``supabase``.
+``CLOUD_DEFAULT_ENABLED`` is on, so a missing ``backend`` key selects Supabase.
+A config value of ``sqlite`` still wins over that default. Missing URL or
+Secret stops with ``CONFIG_MISSING`` and does not open SQLite.
 ``MARKETREVIEW_HOME`` never selects a backend.
 
 Config lives in ``~/.marketreview/config`` (``backend``, ``supabase_url``,
@@ -27,9 +29,9 @@ from pathlib import Path
 from .errors import BackendSelectionError
 
 CONTRACT_DEFAULT_BACKEND = "supabase"
-# Issue #10 turns this on after backup, merge, and acceptance. Until then the
-# daily CLI stays on SQLite so an unmigrated project cannot interrupt reviews.
-CLOUD_DEFAULT_ENABLED = False
+# Issue #10. On after the reviewed migration. The config file still overrides
+# this; both machines must set backend=supabase. Missing URL or Secret errors.
+CLOUD_DEFAULT_ENABLED = True
 VALID_BACKENDS = frozenset({"sqlite", "supabase"})
 CONFIG_FILENAME = "config"
 SECRET_FILENAME = "supabase.secret"
@@ -276,7 +278,7 @@ def _missing_cloud_config_message(
         parts.append("已自动创建模板：" + "、".join(created) + "。")
     parts.append(
         f"请编辑 {config_dir / CONFIG_FILENAME}："
-        "填写 supabase_url、supabase_publishable_key；backend 可暂保持 sqlite。"
+        "填写 supabase_url、supabase_publishable_key，并把 backend 设为 supabase。"
     )
     parts.append(
         f"请编辑 {config_dir / SECRET_FILENAME}："

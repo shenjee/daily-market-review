@@ -1,8 +1,8 @@
 # Supabase 云端后端设计
 
-状态：选型已确定，尚未实现；当前阶段为配置准备与接入验证。更新日期：2026-09-29。
+状态：日常默认已是 Supabase（2026-10-03）。#10 待独立复查，未关闭。选型合同仍以 2026-09-29 正文为准。
 
-本设计仅涉及独立的 daily-market-review Skill 及本机 CLI，不修改 PRD。下列为已选定合同；日常默认后端在正式切换（#10）前仍为 SQLite。
+本设计仅涉及独立的 daily-market-review Skill 及本机 CLI，不修改 PRD。下列为已选定合同。2026-10-03 起日常默认后端是 Supabase；#10 仍待独立复查，未关闭。
 
 当前 MacBook Air M1 和 MacBook Pro M3 都已安装 Skill，各自的本地 SQLite 都有数据；两份数据可能重叠或不同，不能假定其中一份是另一份的完整副本。
 
@@ -141,10 +141,10 @@ SQL、函数及授权保存为版本化迁移文件。云端建表、升级及�
 
 项目 URL 与 Publishable key（`sb_publishable_...`，旧名 anon）为普通配置，可写在 `config`。Secret Key（`sb_secret_...`，旧名 service_role）单独保存在 `supabase.secret`，不得写入 `config`。兼容旧布局：仅当 `supabase.secret` **不存在**时，可读 `~/.marketreview/supabase.config` 中的 `SUPABASE_SECRET_KEY`（及其中的 URL）；文件存在但为空、格式无效或键值为空时直接报 `CONFIG_MISSING`，不回退旧密钥。安装时仅在目标文件不存在时从模板创建，已有文件对照模板手工补字段，不得覆盖。可用 `MARKETREVIEW_CONFIG_DIR` 覆盖配置目录（测试用）；`MARKETREVIEW_HOME` 只控制本地库路径，不选择后端、也不改配置目录。填写步骤见 README「云端配置模板」与 `SKILL.md`「云端配置」。
 
-- 新版本未配置 backend 时默认 Supabase；缺 URL、密钥或断网均报错。这是有意改变旧版本默认行为，升级说明和 SKILL.md 必须明确说明，不能把现存 SQLite 文件当作自动回退理由。在正式切换（#10）前，日常进程默认仍为 sqlite（`CLOUD_DEFAULT_ENABLED=False`），以免未迁移环境中断复盘。
+- 新版本未配置 backend 时默认 Supabase；缺 URL、密钥或断网均报错。这是有意改变旧版本默认行为，升级说明和 SKILL.md 必须明确说明，不能把现存 SQLite 文件当作自动回退理由。`CLOUD_DEFAULT_ENABLED=True`。选择顺序仍是 `--backend`、配置文件 `backend`、代码默认值。配置里的 `sqlite` 会盖过代码默认值，所以两机配置都要写成 `supabase`。
 - 显式 `--backend sqlite` 可覆盖本机的 supabase 配置；SQLite 路径保留 `--db` > MARKETREVIEW_HOME > 默认路径的规则。`--db` 单独出现不能隐式选择 SQLite；最终有效后端仍为 supabase 时，与 `--db` 冲突，在打开库或请求网络前报错。
 - MARKETREVIEW_HOME 只控制本地库路径，不选择后端。默认云端日常命令不得打开日常 SQLite；显式 SQLite 命令不得请求云端。
-- 同步入口独立于日常 backend，显式指定本地来源/目标和云端项目，不修改默认配置。命令合同为 `sync push`（本地→云端）与 `sync pull`（云端→本地），分别用 `--source`、`--target` 指定 SQLite；省略时按现有本地路径规则确定日常库，输出解析后的路径和项目。实现见 `scripts/marketreview/sync_engine.py` 与 CLI `sync` 子命令。#11 已在同 Mac 双账本对真实项目完成上传合并与全量下载冒烟（含 PG jsonb 整值 float 归一化修复）；#9 **Mac 侧**已完成含 public wrappers 的产品化 `pg_dump`、带真实业务数据的本机空白库恢复，以及同 Mac 双账本迁移演练（见[环境实测记录](Supabase环境实测记录.md)）。#9 整体仍挂 M1 第二份备份与真物理双机；回灌云端 PG 17 与 #10 正式切换均未通过；**不得**据此改 `CLOUD_DEFAULT_ENABLED`。
+- 同步入口独立于日常 backend，显式指定本地来源/目标和云端项目，不修改默认配置。命令合同为 `sync push`（本地→云端）与 `sync pull`（云端→本地），分别用 `--source`、`--target` 指定 SQLite；省略时按现有本地路径规则确定日常库，输出解析后的路径和项目。实现见 `scripts/marketreview/sync_engine.py` 与 CLI `sync` 子命令。#11 已在同 Mac 双账本对真实项目完成上传合并与全量下载冒烟（含 PG jsonb 整值 float 归一化修复）；#9 与合同第 6 项迁移已通过。默认切换的开发侧记录见[环境实测记录](Supabase环境实测记录.md)。#10 在独立复查通过前不勾选、不关闭。
 - Agent 使用默认云端；用户要求本地时使用 --backend sqlite；用户要求同步时走专用同步入口，不能循环调用日常保存命令搬运数据。
 
 - 提供本地配置模板（见上表），由用户填写 URL、Publishable 与 Secret；凭证不得进入 Git、发布包、日志或测试夹具。

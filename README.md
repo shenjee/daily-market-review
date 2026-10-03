@@ -86,9 +86,9 @@ export MARKETREVIEW_HOME="/path/to/marketreview-data"
 
 ### 云端配置模板（可选）
 
-正式切换到 Supabase 之前，日常仍默认使用本地 SQLite，可不填写云端凭证。
+日常默认后端是 Supabase。未写 `backend` 时用代码默认值 `supabase`。`~/.marketreview/config` 里的 `backend` 优先于代码默认值，所以两机都要写成 `supabase`，不能只改代码开关。缺 URL 或 Secret、鉴权失败或断网会报错停止，不会自动打开 SQLite。只读本地账本时加 `--backend sqlite`。
 
-需要接入云端时（`sync` 或 `backend=supabase`），若本机尚无配置文件，CLI 会自动从 Skill 安装目录复制模板到 `~/.marketreview/`（已有文件不覆盖），并提示自行填写。也可手工复制。填好的文件只留在本机，不要提交 Git、打进发布包，或贴到对话 / 日志 / Issue。
+若本机尚无配置文件，CLI 在需要云端配置时会自动从 Skill 安装目录复制模板到 `~/.marketreview/`（已有文件不覆盖），并提示自行填写。也可手工复制。填好的文件只留在本机，不要提交 Git、打进发布包，或贴到对话 / 日志 / Issue。
 
 ```bash
 mkdir -p ~/.marketreview
@@ -101,7 +101,7 @@ chmod 600 ~/.marketreview/supabase.secret
 
 | 项 | 本机位置 | 说明 |
 | --- | --- | --- |
-| 后端选择 | `~/.marketreview/config` 中 `backend` | 只能是 `sqlite` 或 `supabase`；切换前保持 `sqlite` |
+| 后端选择 | `~/.marketreview/config` 中 `backend` | 只能是 `sqlite` 或 `supabase`；日常写 `supabase`。省略时进程默认也是 `supabase` |
 | 项目 URL | 同上 `supabase_url` | 控制台 Project URL，不含密钥 |
 | Publishable | 同上 `supabase_publishable_key` | `sb_publishable_...`（旧名 anon 亦可）；低权限，可写在 config |
 | Secret | `~/.marketreview/supabase.secret` | `sb_secret_...`（旧名 service_role 亦可）；高权限，单独文件、单行、权限 600 |
@@ -127,7 +127,7 @@ python3 "<skill-dir>/scripts/cli.py" sync pull --target ~/.marketreview/market_r
 
 ### 云端 PostgreSQL 备份（管理连接）
 
-正式备份走数据库密码 + `pg_dump`（Session pooler；不用 transaction pooler，不用 Secret Key）。CLI：`scripts/pg_backup.py`（`backup` / `restore-blank` / `verify`）。成功包写入 `~/.marketreview/backups/supabase/<UTC>/`，含 `marketreview` schema、**`public.marketreview_*` wrappers**、迁移副本与校验清单；不进仓库。恢复须在空白库上核验通过才算有效。当前默认后端仍为 SQLite；切换门槛见设计文档 #10，勿提前改默认。
+正式备份走数据库密码 + `pg_dump`（Session pooler；不用 transaction pooler，不用 Secret Key）。CLI：`scripts/pg_backup.py`（`backup` / `restore-blank` / `verify`）。成功包写入 `~/.marketreview/backups/supabase/<UTC>/`，含 `marketreview` schema、**`public.marketreview_*` wrappers**、迁移副本与校验清单；不进仓库。恢复须在空白库上核验通过才算有效。日常默认已是 Supabase。#10 要等独立复查后才关闭。
 
 ## 开发
 
