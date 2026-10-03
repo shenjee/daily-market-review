@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .sync_groups import coerce_double_precision
 from .write_gate import same_json_value
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -313,9 +314,13 @@ def verify_restore(
     expected_functions = json.loads((backup_dir / "functions.json").read_text(encoding="utf-8"))
     expected_catalog = json.loads((backup_dir / "catalog.json").read_text(encoding="utf-8"))
     actual_snapshot = _snapshot(conn, database=database, bin_dir=tools)
-    # dump/restore 经 float8 文本往返后，jsonb 浮点字面量可能差 1 ULP；
-    # 业务核验沿用同步合同的浮点容差，不要求 JSON 文本逐字节相等。
-    if not same_json_value(actual_snapshot, expected_snapshot):
+    # jsonb 把整值 double precision 编成 JSON 整数；float8 文本往返后可能差 1 ULP，
+    # 于是同一字段一边是 int、一边是 float。先统一成 float，再按同步合同容差比较。
+    # 家数、revision 等整数不转换。
+    if not same_json_value(
+        coerce_double_precision(actual_snapshot),
+        coerce_double_precision(expected_snapshot),
+    ):
         raise PgBackupError("恢复后的快照与备份不一致。")
     if _function_defs(conn, database=database, bin_dir=tools) != expected_functions:
         raise PgBackupError("恢复后的函数与备份不一致。")

@@ -41,6 +41,7 @@ from marketreview.pg_backup import (
     _catalog,
 )
 from marketreview.schema import ATOMIC_FIELD_NAMES
+from marketreview.sync_groups import coerce_double_precision
 from marketreview.write_gate import FLOAT_ABS_TOL, same_json_value
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -139,7 +140,8 @@ class TestBackupPolicy(unittest.TestCase):
         # dump/restore 经 float8 文本往返后 jsonb 字面量可差 1 ULP；
         # verify_restore 必须用同步合同容差，不能要求 dict 全等。
         source = (ROOT / "scripts" / "marketreview" / "pg_backup.py").read_text(encoding="utf-8")
-        self.assertIn("same_json_value(actual_snapshot, expected_snapshot)", source)
+        self.assertIn("coerce_double_precision(actual_snapshot)", source)
+        self.assertIn("coerce_double_precision(expected_snapshot)", source)
         self.assertNotIn("actual_snapshot != expected_snapshot", source)
         left = {"turnover_rate": 0.0682766914367676}
         right = {"turnover_rate": 0.06827669143676758}
@@ -147,6 +149,19 @@ class TestBackupPolicy(unittest.TestCase):
         self.assertLess(abs(left["turnover_rate"] - right["turnover_rate"]), FLOAT_ABS_TOL)
         self.assertTrue(same_json_value(left, right))
         self.assertFalse(same_json_value(left, {"turnover_rate": 0.07}))
+        whole = {"details": [{"previous_turnover_amount": 873189300}]}
+        drifted = {"details": [{"previous_turnover_amount": 873189299.9999999}]}
+        self.assertFalse(same_json_value(whole, drifted))
+        self.assertTrue(
+            same_json_value(coerce_double_precision(whole), coerce_double_precision(drifted))
+        )
+        changed = {"details": [{"previous_turnover_amount": 873189301.0}]}
+        self.assertFalse(
+            same_json_value(coerce_double_precision(whole), coerce_double_precision(changed))
+        )
+        counts = coerce_double_precision({"revision": 42, "reviews": [{"advancing_count": 5}]})
+        self.assertIs(type(counts["revision"]), int)
+        self.assertIs(type(counts["reviews"][0]["advancing_count"]), int)
 
     def test_catalog_query_excludes_pg18_not_null_contype(self) -> None:
         # PG18 把 NOT NULL 记为 contype='n'；云端 17 dump 的 catalog 无这些名字。

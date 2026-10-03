@@ -28,8 +28,29 @@ DETAIL_FLOAT_FIELDS = (
     "turnover_amount",
     "turnover_rate",
 )
+DOUBLE_PRECISION_FIELDS = FLOAT_REVIEW_FIELDS | frozenset(DETAIL_FLOAT_FIELDS)
 AUDIT_FIELDS = frozenset({"created_at", "updated_at"})
 RESURRECTION_KINDS = frozenset({"delete", "direction_replace"})
+
+
+def coerce_double_precision(value: Any) -> Any:
+    """Restore double precision fields to float.
+
+    PostgreSQL jsonb emits a whole ``double precision`` as a JSON integer.
+    A float8 dump/restore can move that value by 1 ULP, so the same field comes
+    back as a JSON float. Counts and revisions stay integers.
+    """
+    if isinstance(value, dict):
+        coerced: dict[Any, Any] = {}
+        for key, item in value.items():
+            if key in DOUBLE_PRECISION_FIELDS and type(item) in {int, float}:
+                coerced[key] = float(item)
+            else:
+                coerced[key] = coerce_double_precision(item)
+        return coerced
+    if isinstance(value, list):
+        return [coerce_double_precision(item) for item in value]
+    return value
 
 
 def canonical_json(value: Any) -> str:
