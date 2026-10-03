@@ -58,7 +58,7 @@
 - “查看 2026-08-21 的市场复盘”
 - “查看今天的每日梯队”
 
-写入时，Skill 可以根据用户提供的文字、图片、网页或 API 数据完成整理和校验。读取已保存数据时不会自动联网取数，也不会修改数据库。
+写入时，Skill 可以根据用户提供的文字、图片、网页或 API 数据完成整理和校验。查看已保存数据时不会再去抓外部行情，也不会因为查看而改账。日常账本在 Supabase 上，所以这次读取要访问该项目；这和「不抓行情网站」是两件事。显式 `--backend sqlite` 才读本地文件，并且不访问云端。
 
 ## 当前限制
 
@@ -68,25 +68,27 @@
 
 ## 用户数据
 
-默认数据文件位于：
+权威账本在 Supabase。同一系统用户下的 Agent 通过本机 `~/.marketreview/config` 指向同一个项目。Skill 安装目录只存放程序和内置资源，配置与 Secret 在 `~/.marketreview/`，升级或移除 Skill 不应删除该目录。
+
+本地文件：
 
 ```text
 ~/.marketreview/market_review.sqlite3
 ```
 
-Skill 安装目录只存放程序和内置资源，用户数据独立保存在 `~/.marketreview/`。因此，同一系统用户下、且使用默认数据路径的多个 Agent，会共享同一份复盘数据；升级或移除 Skill 也不应删除该目录。若某 Agent 设置了不同的 `MARKETREVIEW_HOME`，则使用各自的数据目录。
+这是可选副本，只在 `--backend sqlite` 或 `sync` 指定来源/目标时使用。`MARKETREVIEW_HOME` 只改这份本地文件的目录，不选择后端。不要让多个用户账户共用同一个数据目录。
 
-如需更改数据目录，可在启动 Agent 前设置 `MARKETREVIEW_HOME`：
+如需更改本地副本目录，可在启动 Agent 前设置 `MARKETREVIEW_HOME`：
 
 ```bash
 export MARKETREVIEW_HOME="/path/to/marketreview-data"
 ```
 
-请定期备份该目录。不要让多个用户账户共用同一个数据目录。
+请定期备份该目录。
 
 ### 云端配置模板（可选）
 
-日常默认后端是 Supabase。未写 `backend` 时用代码默认值 `supabase`。`~/.marketreview/config` 里的 `backend` 优先于代码默认值，所以两机都要写成 `supabase`，不能只改代码开关。缺 URL 或 Secret、鉴权失败或断网会报错停止，不会自动打开 SQLite。只读本地账本时加 `--backend sqlite`。
+日常默认后端是 Supabase。未写 `backend` 时用代码默认值 `supabase`。`~/.marketreview/config` 里的 `backend` 优先于代码默认值，所以两机都要写成 `supabase`，不能只改代码开关。缺 URL 或 Secret、鉴权失败或断网会报错停止，不会自动打开 SQLite。`--backend sqlite` 选择本地库，读和写都会落到该文件；它不是只读开关。`--db` 不能代替这个选择。
 
 若本机尚无配置文件，CLI 在需要云端配置时会自动从 Skill 安装目录复制模板到 `~/.marketreview/`（已有文件不覆盖），并提示自行填写。也可手工复制。填好的文件只留在本机，不要提交 Git、打进发布包，或贴到对话 / 日志 / Issue。
 
@@ -108,9 +110,11 @@ chmod 600 ~/.marketreview/supabase.secret
 
 日常写 RPC 使用 Secret。`backend=sqlite`（或显式 `--backend sqlite`）时不要求云端凭证。使用 `supabase` 时必须已填写 URL 与 Secret；缺配置、鉴权失败或断网会明确报错，**不会**回退本地 SQLite。兼容：仅当 `supabase.secret` **不存在**时，可读 `~/.marketreview/supabase.config` 里的 `SUPABASE_SECRET_KEY`；文件存在但内容无效时直接报错，不回退旧密钥。
 
-### 两机同步（独立于日常 backend）
+### 上传与完整下载（独立于日常 backend）
 
-`sync push` / `sync pull` 不修改日常 `backend` 配置；需要本机已填写 URL 与 Secret。省略 `--source` / `--target` 时按现有本地路径规则解析日常 SQLite。
+权威账本在云端。`sync push` 把一份本地库上传进去，`sync pull` 把云端完整下载到一份本地库。两者都不修改日常 `backend`，也不要求两台电脑的本地库保持一致。需要本机已填写 URL 与 Secret。省略 `--source` / `--target` 时按现有本地路径规则解析日常 SQLite。
+
+回退：先停止写入，核对云端相对准备启用的那份旧 SQLite 差了什么，再决定下载或从云备份恢复。不能把过期本地库直接当成当前账本。`partial` 或「待下载」表示这次合并还没结束，不是云端缺少已提交的上传。
 
 ```bash
 python3 "<skill-dir>/scripts/cli.py" sync push --source ~/.marketreview/market_review.sqlite3

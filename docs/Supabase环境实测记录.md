@@ -1,5 +1,20 @@
 # Supabase 环境实测记录
 
+## 2026-10-03 第 7 项独立审查未通过
+
+审查对象 `2b307b51e27f6503146166b2e83a55bf2c6ec88b`。结论保持 #10 OPEN。报告 `/private/tmp/daily-market-review-step7-audit-20261003.md`，评论 [ #3 ](https://github.com/shenjee/daily-market-review/issues/3#issuecomment-5970144444)。
+
+安装状态，四处不要混成一件事：
+
+| 入口 | 状态 |
+| --- | --- |
+| M3 仓库 `/Users/jishen/development/daily-market-review` | 含默认切换代码。审查指出不能用仓库 HEAD 代替安装证明 |
+| 本机 Codex `/Users/jishen/.codex/skills/daily-market-review` | 仍是 v0.3.4 旧运行文件，`cli.py` 没有 `--backend` / `sync`。审查要求更新须另有授权，本轮没有替换它 |
+| M3 上其他 Agent | 没有逐个入口的哈希和原始输出 |
+| M1 | 账本已在云端（`2026-09-23`，89 条事件）。没有当前安装清单，不能写成已经装上切换版本 |
+
+第 6 项维持独立通过，交付时点 revision 42。开发摘要里的原值重写把 revision 记到 43，审查方未把该摘要当成完整云端现状。本轮不再写生产数据，也不把云端拉回两台日常库。
+
 ## 2026-10-03 合同第 7 项：默认切到 Supabase（开发侧，#10 未关闭）
 
 父提交 `45eb7ba21d16693160975da336f9780f1a54704a`（jsonb 整值 double 在备份校验前归一为 float；`sync_commit` / `sync_snapshot` 语句超时 60 秒，其余接口仍 8 秒）。云端该迁移已执行。本轮把 `CLOUD_DEFAULT_ENABLED` 设为 True，并在 M3 新建 `~/.marketreview/config`：`backend=supabase`，URL 主机 `nyscgdxrctwchbzclszt.supabase.co`。切换前 M3 没有 `config` 文件，URL 与 Secret 在旧的 `supabase.config`；Secret 仍只留在该文件，未写入 `config`、仓库或本记录。

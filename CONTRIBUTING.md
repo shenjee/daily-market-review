@@ -31,23 +31,25 @@ ln -s "$(pwd)" ~/.codex/skills/daily-market-review
 
 ## CLI 调试
 
-`--db` 必须放在子命令之前。调试和测试时应显式指定临时数据库，避免修改真实用户数据：
+`--db` 必须放在子命令之前，并且不能单独把后端改成 SQLite。调试本地库时同时写上 `--backend sqlite`，并用临时文件，避免改到真实用户数据：
 
 ```bash
-python3 scripts/cli.py --db /tmp/marketreview-test.sqlite3 get --date 2026-08-21
+python3 scripts/cli.py --backend sqlite --db /tmp/marketreview-test.sqlite3 get --date 2026-08-21
 
-python3 scripts/cli.py --db /tmp/marketreview-test.sqlite3 save-review --date 2026-08-21 --input - <<'EOF'
+python3 scripts/cli.py --backend sqlite --db /tmp/marketreview-test.sqlite3 save-review --date 2026-08-21 --input - <<'EOF'
 {"pe_sh": 17.0, "advancing_count": 3210}
 EOF
 
-python3 scripts/cli.py --db /tmp/marketreview-test.sqlite3 save-events --date 2026-08-21 --input - <<'EOF'
+python3 scripts/cli.py --backend sqlite --db /tmp/marketreview-test.sqlite3 save-events --date 2026-08-21 --input - <<'EOF'
 {"events": [{"market": "sh", "code": "600519", "name": "贵州茅台", "direction": "up", "closed_at_limit": true, "limit_rate_bp": 1000, "streak_height": 4}]}
 EOF
 
-python3 scripts/cli.py --db /tmp/marketreview-test.sqlite3 save-event-details --date 2026-08-21 --input - <<'EOF'
+python3 scripts/cli.py --backend sqlite --db /tmp/marketreview-test.sqlite3 save-event-details --date 2026-08-21 --input - <<'EOF'
 {"details": [{"market": "sh", "code": "600519", "direction": "up", "sectors": ["白酒"], "limit_up_reasons": ["业绩增长"], "is_leader": true}]}
 EOF
 ```
+
+只写 `--db`、不写 `--backend sqlite` 时，当前默认后端是 Supabase，命令会以 `BACKEND_CONFLICT` 停止。
 
 ## 测试
 
@@ -89,4 +91,4 @@ daily-market-review/
 3. 确认运行时说明文件不含开发文档目录字面量（由 `tests/test_runtime_docs.py` 覆盖；也可手动扫描 `SKILL.md`、`README.md` 和 `references/`）。
 4. 按上述目录结构生成 `daily-market-review-vX.Y.Z.zip`。
 5. 创建 GitHub Release，上传版本包（不要依赖 GitHub 自动生成的 Source code 压缩包）。
-6. 用解压后的 ZIP 独立安装测试一次，确认不依赖仓库中的额外文件（如 `tests/`）；并确认 `scripts/pg_backup.py` 在默认路径下能读到包内 `contracts/` 与 `sql/migrations/`（可用 `--help` / 合同文件存在性检查，不必连真实云端）。
+6. 用解压后的 ZIP 独立安装测试一次，确认不依赖仓库中的额外文件（如 `tests/`）；并确认 `scripts/pg_backup.py` 在默认路径下能读到包内 `contracts/` 与 `sql/migrations/`（可用 `--help` / 合同文件存在性检查，不必连真实云端）。安装核对要记录 Skill 目录绝对路径、`scripts/cli.py` 的 SHA-256，以及 `cli.py --help` 里能看到 `--backend` 和 `sync`。仓库工作副本不能代替这份安装证明。v0.3.4 发布包没有云端运行文件，不能当作当前交付包。

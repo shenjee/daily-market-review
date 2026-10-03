@@ -186,7 +186,7 @@ CLI 输出统一为：
 
 ## 云端配置（接入 Supabase 时）
 
-日常默认写入 Supabase（项目以本机 `supabase_url` 为准，两机应指向同一项目）。`CLOUD_DEFAULT_ENABLED=True`。本机 `config` 的 `backend` 也必须是 `supabase`，只改代码开关不会盖过配置里的 `sqlite`。缺 URL 或 Secret 时报错停止，不打开 SQLite。显式 `--backend sqlite` 只读本地账本，不请求云端。`--db` 不能把默认后端改成 SQLite。断网不会自动改用本地库。
+日常默认写入 Supabase（项目以本机 `supabase_url` 为准）。`CLOUD_DEFAULT_ENABLED=True`。本机 `config` 的 `backend` 也必须是 `supabase`，只改代码开关不会盖过配置里的 `sqlite`。缺 URL 或 Secret 时报错停止，不打开 SQLite。`--backend sqlite` 改用本地库，之后的 get 和 save 都作用在该文件上，不是只读开关；第 7 项现场核验只用了 get。该模式不请求云端。`--db` 不能把默认后端改成 SQLite。断网不会自动改用本地库。
 
 首次使用云端能力（`sync` 或 `backend=supabase`）且本机缺少配置文件时，CLI 会**自动**从 Skill 目录复制模板到 `~/.marketreview/`（已有文件绝不覆盖），并报错提示需填写的字段。Agent 不得代写真实密钥进仓库或对话。也可手工执行：
 
@@ -202,7 +202,7 @@ chmod 600 ~/.marketreview/supabase.secret
 - 选用 `supabase` 后端时缺 URL 或 Secret 则报错停止，不回退 SQLite；显式 `--backend sqlite` 不要求云端凭证
 - 仅当 `supabase.secret` 不存在时可回退旧 `supabase.config`；文件存在但无效则报错
 - 填写说明以模板文件注释和 README「云端配置模板」为准
-- 两机同步独立于日常 backend，不改默认配置；需要已填写 URL/Secret：
+- 上传和完整下载独立于日常 backend，不改默认配置，也不要求两台本地库一致。`partial` 或待下载不是云端没有已提交的数据。回退前先停写，核对云端和准备启用的旧 SQLite 的差异，不能直接把旧本地库当成权威账本。需要已填写 URL/Secret：
 
 ```bash
 python3 "<skill-dir>/scripts/cli.py" sync push [--source <sqlite>]

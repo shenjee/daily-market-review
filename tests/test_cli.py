@@ -38,6 +38,8 @@ class TestCli(unittest.TestCase):
             with patch("sys.stdin", io.StringIO(json.dumps({"pe_sh": 17.0}))):
                 rc = cli.main(
                     [
+                        "--backend",
+                        "sqlite",
                         "--db",
                         str(db_path),
                         "save-review",
@@ -51,7 +53,7 @@ class TestCli(unittest.TestCase):
 
             buffer = io.StringIO()
             with patch("sys.stdout", buffer):
-                rc = cli.main(["--db", str(db_path), "get", "--date", "2026-08-21"])
+                rc = cli.main(["--backend", "sqlite", "--db", str(db_path), "get", "--date", "2026-08-21"])
             self.assertEqual(rc, 0)
             payload = json.loads(buffer.getvalue())
             self.assertTrue(payload["ok"])
@@ -83,6 +85,8 @@ class TestCli(unittest.TestCase):
                 with patch("sys.stdout", buffer):
                     rc = cli.main(
                         [
+                            "--backend",
+                            "sqlite",
                             "--db",
                             str(db_path),
                             "save-events",
@@ -113,6 +117,8 @@ class TestCli(unittest.TestCase):
                 with patch("sys.stdout", buffer):
                     rc = cli.main(
                         [
+                            "--backend",
+                            "sqlite",
                             "--db",
                             str(db_path),
                             "save-events",
@@ -128,7 +134,7 @@ class TestCli(unittest.TestCase):
 
             get_buffer = io.StringIO()
             with patch("sys.stdout", get_buffer):
-                rc = cli.main(["--db", str(db_path), "get", "--date", "2026-08-21"])
+                rc = cli.main(["--backend", "sqlite", "--db", str(db_path), "get", "--date", "2026-08-21"])
             self.assertEqual(rc, 0)
             get_payload = json.loads(get_buffer.getvalue())
             self.assertTrue(get_payload["ok"])
@@ -151,6 +157,8 @@ class TestCli(unittest.TestCase):
                 with patch("sys.stdout", buffer):
                     rc = cli.main(
                         [
+                            "--backend",
+                            "sqlite",
                             "--db",
                             str(db_path),
                             "save-events",
@@ -190,7 +198,7 @@ class TestCli(unittest.TestCase):
             db_path = Path(tmp) / "market_review.sqlite3"
             with patch("sys.stdin", io.StringIO(json.dumps({"events": [event]}))):
                 rc = cli.main(
-                    ["--db", str(db_path), "save-events", "--date", "2026-08-21", "--input", "-"]
+                    ["--backend", "sqlite", "--db", str(db_path), "save-events", "--date", "2026-08-21", "--input", "-"]
                 )
             self.assertEqual(rc, 0)
 
@@ -199,6 +207,8 @@ class TestCli(unittest.TestCase):
                 with patch("sys.stdout", buffer):
                     rc = cli.main(
                         [
+                            "--backend",
+                            "sqlite",
                             "--db",
                             str(db_path),
                             "save-event-details",
@@ -215,7 +225,7 @@ class TestCli(unittest.TestCase):
 
             get_buffer = io.StringIO()
             with patch("sys.stdout", get_buffer):
-                rc = cli.main(["--db", str(db_path), "get", "--date", "2026-08-21"])
+                rc = cli.main(["--backend", "sqlite", "--db", str(db_path), "get", "--date", "2026-08-21"])
             self.assertEqual(rc, 0)
             get_payload = json.loads(get_buffer.getvalue())
             self.assertTrue(get_payload["ok"])
@@ -273,18 +283,18 @@ class TestCli(unittest.TestCase):
             db_path = Path(tmp) / "market_review.sqlite3"
             with patch("sys.stdin", io.StringIO(json.dumps({"events": previous_events}))):
                 rc = cli.main(
-                    ["--db", str(db_path), "save-events", "--date", "2026-08-20", "--input", "-"]
+                    ["--backend", "sqlite", "--db", str(db_path), "save-events", "--date", "2026-08-20", "--input", "-"]
                 )
             self.assertEqual(rc, 0)
             with patch("sys.stdin", io.StringIO(json.dumps({"events": today_events}))):
                 rc = cli.main(
-                    ["--db", str(db_path), "save-events", "--date", "2026-08-21", "--input", "-"]
+                    ["--backend", "sqlite", "--db", str(db_path), "save-events", "--date", "2026-08-21", "--input", "-"]
                 )
             self.assertEqual(rc, 0)
 
             get_buffer = io.StringIO()
             with patch("sys.stdout", get_buffer):
-                rc = cli.main(["--db", str(db_path), "get", "--date", "2026-08-21"])
+                rc = cli.main(["--backend", "sqlite", "--db", str(db_path), "get", "--date", "2026-08-21"])
             self.assertEqual(rc, 0)
             payload = json.loads(get_buffer.getvalue())
             self.assertTrue(payload["ok"])
@@ -311,7 +321,7 @@ class TestCli(unittest.TestCase):
             db_path = Path(tmp) / "market_review.sqlite3"
             with patch("sys.stdin", io.StringIO(json.dumps({"events": [event]}))):
                 rc = cli.main(
-                    ["--db", str(db_path), "save-events", "--date", "2026-08-21", "--input", "-"]
+                    ["--backend", "sqlite", "--db", str(db_path), "save-events", "--date", "2026-08-21", "--input", "-"]
                 )
             self.assertEqual(rc, 0)
             buffer = io.StringIO()
@@ -319,6 +329,8 @@ class TestCli(unittest.TestCase):
                 with patch("sys.stdout", buffer):
                     rc = cli.main(
                         [
+                            "--backend",
+                            "sqlite",
                             "--db",
                             str(db_path),
                             "save-event-details",
@@ -339,7 +351,7 @@ class TestCli(unittest.TestCase):
             db_path.mkdir()
             buffer = io.StringIO()
             with patch("sys.stdout", buffer):
-                rc = cli.main(["--db", str(db_path), "get", "--date", "2026-08-21"])
+                rc = cli.main(["--backend", "sqlite", "--db", str(db_path), "get", "--date", "2026-08-21"])
             self.assertEqual(rc, 1)
             payload = json.loads(buffer.getvalue())
             self.assertFalse(payload["ok"])
@@ -361,7 +373,7 @@ class TestCli(unittest.TestCase):
             try:
                 buffer = io.StringIO()
                 with patch("sys.stdout", buffer):
-                    rc = cli.main(["--db", str(db_path), "get", "--date", "2026-08-21"])
+                    rc = cli.main(["--backend", "sqlite", "--db", str(db_path), "get", "--date", "2026-08-21"])
                 self.assertEqual(rc, 1)
                 payload = json.loads(buffer.getvalue())
                 self.assertFalse(payload["ok"])
@@ -384,7 +396,7 @@ class TestCli(unittest.TestCase):
             try:
                 buffer = io.StringIO()
                 with patch("sys.stdout", buffer):
-                    rc = cli.main(["--db", str(db_path), "get", "--date", "2026-08-21"])
+                    rc = cli.main(["--backend", "sqlite", "--db", str(db_path), "get", "--date", "2026-08-21"])
                 self.assertEqual(rc, 1)
                 payload = json.loads(buffer.getvalue())
                 self.assertFalse(payload["ok"])
@@ -393,6 +405,34 @@ class TestCli(unittest.TestCase):
                 self.assertIn("readonly", payload["error"]["message"].lower())
             finally:
                 os.chmod(db_path, 0o644)
+
+    def test_missing_cloud_config_stays_stopped_on_repeat(self) -> None:
+        import os
+
+        from marketreview.storage import MarketReviewRepository
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_dir = Path(tmp) / "config"
+            config_dir.mkdir()
+            opened: list[object] = []
+            real_init = MarketReviewRepository.__init__
+
+            def counting_init(repo, *args, **kwargs):
+                opened.append(repo)
+                return real_init(repo, *args, **kwargs)
+
+            with patch.dict(os.environ, {"MARKETREVIEW_CONFIG_DIR": str(config_dir)}):
+                with patch.object(MarketReviewRepository, "__init__", counting_init):
+                    for _ in range(2):
+                        buffer = io.StringIO()
+                        with patch("sys.stdout", buffer):
+                            rc = cli.main(["get", "--date", "2026-08-21"])
+                        self.assertEqual(rc, 1)
+                        payload = json.loads(buffer.getvalue())
+                        self.assertEqual(payload["error"]["code"], "CONFIG_MISSING")
+                        self.assertIn("不会改用本地数据库", payload["error"]["message"])
+            self.assertEqual(opened, [])
+            self.assertFalse((Path(tmp) / "market_review.sqlite3").exists())
 
     def test_supabase_backend_rejects_db_before_opening_sqlite(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
