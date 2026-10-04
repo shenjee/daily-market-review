@@ -186,7 +186,7 @@ CLI 输出统一为：
 
 ## 云端配置（接入 Supabase 时）
 
-日常默认写入 Supabase（项目以本机 `supabase_url` 为准）。`CLOUD_DEFAULT_ENABLED=True`。本机 `config` 的 `backend` 也必须是 `supabase`，只改代码开关不会盖过配置里的 `sqlite`。缺 URL 或 Secret 时报错停止，不打开 SQLite。`--backend sqlite` 改用本地库，之后的 get 和 save 都作用在该文件上，不是只读开关；第 7 项现场核验只用了 get。该模式不请求云端。`--db` 不能把默认后端改成 SQLite。断网不会自动改用本地库。
+日常默认写入 Supabase（项目以本机 `supabase_url` 为准）。`CLOUD_DEFAULT_ENABLED=True`。本机 `config` 的 `backend` 也必须是 `supabase`，只改代码开关不会盖过配置里的 `sqlite`。缺 URL 或 Secret 时报错停止，不打开 SQLite。`--backend sqlite` 改用本地库，之后的 get 和 save 都作用在该文件上，不是只读开关；只读查询使用 get。该模式不请求云端。`--db` 不能把默认后端改成 SQLite。断网不会自动改用本地库。
 
 首次使用云端能力（`sync` 或 `backend=supabase`）且本机缺少配置文件时，CLI 会**自动**从 Skill 目录复制模板到 `~/.marketreview/`（已有文件绝不覆盖），并报错提示需填写的字段。Agent 不得代写真实密钥进仓库或对话。也可手工执行：
 

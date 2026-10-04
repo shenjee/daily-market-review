@@ -2,7 +2,7 @@
 
 ## 2026-10-04 第 7 项收口范围
 
-用户撤销逐台安装追踪、Agent 使用记录和额外生产写测。这些不再是 #10 的关闭条件，已有测试覆盖的场景不重复演练。
+用户撤销逐台安装追踪、Agent 使用记录、持续使用跟踪和额外生产写测；此前生产写测的授权/结果补交也不再作为第 7 项关闭门槛。这些适用于 M1/M3 及未来更多电脑。已有测试覆盖的场景不重复演练，发布后正常使用，问题按 bug 迭代。现行范围见[验收合同](开发与独立审查验收合同.md)。
 
 收口只看 `83c0df001bc4c9d956492dc58529b248d87cc4b9`：
 
@@ -13,9 +13,9 @@
 | 默认行为 | `CLOUD_DEFAULT_ENABLED=True`。缺 URL/Secret、鉴权失败或断网报错停止，不打开 SQLite。`--backend sqlite` 使用本地库且不请求云端。`--db` 单独出现不能改选 SQLite |
 | 说明 | `README.md`、`SKILL.md` 写明权威账本、失败不回退、显式本地库，以及先停写再核对差异的回退。备份命令是 `pg_backup.py` 的 `backup` / `restore-blank` / `verify`，恢复要在空白库上核验 |
 
-#10 仍等按这个范围复核，先不勾选。
+2026-10-04 按该范围复核通过。CI 成功，47 项定向测试通过；用户包 46 个文件与 `83c0df0` 一致；5 项后端检查通过。报告 `/private/tmp/daily-market-review-step7-final-20261004.md`。#10 关闭。不再追踪逐台安装与使用。
 
-## 2026-10-03 第 7 项独立审查未通过
+## 2026-10-03 第 7 项独立审查未通过（历史记录；超出现行范围的门槛已撤销）
 
 审查对象 `2b307b51e27f6503146166b2e83a55bf2c6ec88b`。结论保持 #10 OPEN。报告 `/private/tmp/daily-market-review-step7-audit-20261003.md`，评论 [ #3 ](https://github.com/shenjee/daily-market-review/issues/3#issuecomment-5970144444)。
 
