@@ -49,6 +49,13 @@ class TestSummary(unittest.TestCase):
         self.assertIsNone(summary["margin_balance_total"])
         self.assertIsNone(summary["turnover_amount_total"])
 
+    def test_limit_up_down_ratio_shows_zero_to_zero(self) -> None:
+        ratio = _limit_up_down_ratio(0, 0)
+        assert ratio is not None
+        self.assertEqual(ratio["effective_limit_up"], 0)
+        self.assertEqual(ratio["closed_limit_down"], 0)
+        self.assertEqual(ratio["display"], "0:0")
+
     def test_limit_up_down_ratio_preserves_zero_side(self) -> None:
         ratio = _limit_up_down_ratio(12, 0)
         assert ratio is not None

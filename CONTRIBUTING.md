@@ -61,7 +61,7 @@ GitHub Actions（`.github/workflows/tests.yml`）跑同一条命令。流水线�
 
 ## 发布包内容
 
-最终用户版本包命名为 `daily-market-review-vX.Y.Z.zip`，解压后根目录为 `daily-market-review/`，应只包含运行所需内容：
+最终用户版本包命名为 `daily-market-review-vX.Y.Z.zip`，解压后根目录为 `daily-market-review/`，应只包含运行所需内容（当前版本 0.4.0）：
 
 ```text
 daily-market-review/
@@ -81,6 +81,8 @@ daily-market-review/
 ```
 
 `config/` 只放未填写的示例模板，供用户复制到 `~/.marketreview/` 后自行填写。`contracts/` 与 `sql/migrations/` 是备份 / 恢复 / 核验工具的运行依赖（函数合同与迁移副本），必须打进版本包。不要把 `.git/`、`tests/`、`__pycache__/`、本地数据库、已填写的凭证、编辑器配置或其他开发产物放入版本包。
+
+README 的开发指南使用源码仓库绝对链接；`CONTRIBUTING.md` 和开发文档不在运行包内，不能从包内 README 相对链接到这些文件。
 
 ## 发布检查清单
 

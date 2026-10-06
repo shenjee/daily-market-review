@@ -28,9 +28,9 @@ def _index_change(close: float | None, prev_close: float | None) -> dict[str, fl
 
 
 def _limit_up_down_ratio(effective_up: int, closed_down: int) -> dict[str, Any] | None:
-    if effective_up <= 0 and closed_down <= 0:
+    if effective_up < 0 or closed_down < 0:
         return None
-    if effective_up <= 0 or closed_down <= 0:
+    if effective_up == 0 or closed_down == 0:
         return {
             "effective_limit_up": effective_up,
             "closed_limit_down": closed_down,

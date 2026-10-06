@@ -10,7 +10,8 @@
 
 # backend 只能是 sqlite 或 supabase。
 # 未写这一行时，进程默认是 supabase。模板写明 supabase，避免复制后把默认盖回 sqlite。
-# 只读本地账本时用命令行 --backend sqlite，不要把这一行改回 sqlite 来当日常默认。
+# 本地后端用 --backend sqlite 选择；该参数不限制写入。只读查询须用 get。
+# 若要长期使用本地模式，可设置 backend=sqlite；迁移到云端后改回 supabase。
 backend=supabase
 
 # 项目 URL（控制台 Project URL），不含密钥。
