@@ -6,7 +6,7 @@ Does not touch daily ~/.marketreview/market_review.sqlite3.
 Does not touch backup samples 2099-09-* or capacity day 2099-08-01.
 Does not change CLOUD_DEFAULT_ENABLED.
 
-Usage (same repo checkout + ~/.marketreview/supabase.config on both machines):
+Usage (same repo checkout + ~/.marketreview/supabase.config and supabase.secret on both machines):
 
   # M3
   python3 scripts/acceptance_dual_machine_sync.py m3-seed

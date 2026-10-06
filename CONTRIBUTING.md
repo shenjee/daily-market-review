@@ -9,7 +9,7 @@
 - `references/数据字段与口径.md`
 - `references/资本市场复盘指标说明与统计口径.md`
 
-[Supabase 云端后端设计](docs/Supabase云端后端设计.md) 是已选定的云端存储方向；目标包括两机本地上传合并、云端全量下载、默认 Supabase 与显式 SQLite。日常默认已是 Supabase（`CLOUD_DEFAULT_ENABLED=True`）。本机 `config` 的 `backend` 仍优先于该默认值。本机云端配置模板见 `config/*.example`，填写说明见 README「云端配置模板」与设计文档第 4 节；不要把填好的凭证提交进仓库。
+[Supabase 云端后端设计](docs/Supabase云端后端设计.md) 是已选定的云端存储方向；目标包括两机本地上传合并、云端全量下载、默认 Supabase 与显式 SQLite。日常默认已是 Supabase（`CLOUD_DEFAULT_ENABLED=True`）。本机 `supabase.config` 的 `backend` 仍优先于该默认值。本机云端配置模板见 `config/*.example`，填写说明见 README「云端配置模板」与设计文档第 4 节；不要把填好的凭证提交进仓库。
 
 
 ## 获取源码
@@ -67,7 +67,7 @@ daily-market-review/
 ├── README.md
 ├── LICENSE
 ├── config/
-│   ├── marketreview.config.example
+│   ├── supabase.config.example
 │   └── supabase.secret.example
 ├── contracts/
 │   └── supabase_rpc_v1.json

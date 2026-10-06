@@ -98,7 +98,7 @@ class TestRuntimeDocsIsolation(unittest.TestCase):
             for name in ("SKILL.md", "README.md", "LICENSE"):
                 (root / name).write_text("x\n", encoding="utf-8")
             for relative in (
-                "config/marketreview.config.example",
+                "config/supabase.config.example",
                 "config/supabase.secret.example",
                 "contracts/supabase_rpc_v1.json",
                 "sql/migrations/0001_marketreview_v1.sql",

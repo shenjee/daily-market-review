@@ -1128,7 +1128,7 @@ class TestSyncGate(SyncCase):
     def test_cli_push_reports_source_path_and_project(self) -> None:
         config = self.root / "config"
         config.mkdir()
-        (config / "config").write_text(
+        (config / "supabase.config").write_text(
             "backend=sqlite\nsupabase_url=https://abc.supabase.co\n",
             encoding="utf-8",
         )
@@ -1156,7 +1156,7 @@ class TestSyncGate(SyncCase):
         self.assertEqual(payload["data"]["project_id"], "abc")
         self.assertEqual(seen["sqlite_path"], self.db.resolve())
         self.assertEqual(seen["state_dir"], self.state)
-        self.assertEqual((config / "config").read_text(encoding="utf-8").splitlines()[0], "backend=sqlite")
+        self.assertEqual((config / "supabase.config").read_text(encoding="utf-8").splitlines()[0], "backend=sqlite")
 
     def test_copied_database_sharing_ledger_id_stops_before_any_rpc(self) -> None:
         self.seed_review()

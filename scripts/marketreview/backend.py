@@ -7,12 +7,11 @@ A config value of ``sqlite`` still wins over that default. Missing URL or
 Secret stops with ``CONFIG_MISSING`` and does not open SQLite.
 ``MARKETREVIEW_HOME`` never selects a backend.
 
-Config lives in ``~/.marketreview/config`` (``backend``, ``supabase_url``,
-optional ``supabase_publishable_key``). The Secret Key lives only in
-``~/.marketreview/supabase.secret``. If that file is absent,
-``SUPABASE_SECRET_KEY`` inside ``~/.marketreview/supabase.config`` may be used.
-If the secret file exists but is empty or otherwise invalid, loading fails with
-``CONFIG_MISSING`` and does not fall back to the legacy file.
+Config lives in ``~/.marketreview/supabase.config`` (``backend``,
+``supabase_url``, optional ``supabase_publishable_key``). The Secret Key lives
+only in ``~/.marketreview/supabase.secret``. A Secret Key inside
+``supabase.config`` is rejected. If the secret file is missing, empty, or
+invalid, loading fails with ``CONFIG_MISSING``.
 
 When cloud settings are loaded and a target file is still missing, the Skill
 ``config/*.example`` templates are copied automatically (never overwriting).
@@ -33,10 +32,9 @@ CONTRACT_DEFAULT_BACKEND = "supabase"
 # this; both machines must set backend=supabase. Missing URL or Secret errors.
 CLOUD_DEFAULT_ENABLED = True
 VALID_BACKENDS = frozenset({"sqlite", "supabase"})
-CONFIG_FILENAME = "config"
+CONFIG_FILENAME = "supabase.config"
 SECRET_FILENAME = "supabase.secret"
-LEGACY_CREDENTIALS_FILENAME = "supabase.config"
-CONFIG_EXAMPLE_NAME = "marketreview.config.example"
+CONFIG_EXAMPLE_NAME = "supabase.config.example"
 SECRET_EXAMPLE_NAME = "supabase.secret.example"
 PLACEHOLDER_MARKERS = ("REPLACE_ME", "PROJECT_REF")
 KNOWN_CONFIG_KEYS = frozenset(
@@ -113,6 +111,11 @@ def load_local_config(config_dir: Path) -> LocalConfig:
     if not path.exists():
         return LocalConfig(backend=None, supabase_url=None, supabase_publishable_key=None)
     values = _read_assignments(path)
+    if not _is_placeholder(values.get("supabase_secret_key")):
+        raise BackendSelectionError(
+            "supabase.config 不能包含 Secret Key。请把密钥写入 supabase.secret，并从 supabase.config 删除该行。",
+            code="CONFIG_MISSING",
+        )
     backend = values.get("backend")
     url = values.get("supabase_url")
     publishable = values.get("supabase_publishable_key")
@@ -132,10 +135,7 @@ def ensure_cloud_config_templates(
 
     Uses ``O_CREAT|O_EXCL`` so a concurrent creator wins and this process skips.
     Secret files are created with mode ``0o600``; permission failures raise.
-
-    Skips creating a new ``config`` / ``supabase.secret`` when the legacy
-    ``supabase.config`` already supplies a usable URL or secret, so placeholders
-    cannot shadow working credentials.
+    Existing ``supabase.config`` and ``supabase.secret`` are never overwritten.
     """
     root = skill_root if skill_root is not None else default_skill_root()
     examples = root / "config"
@@ -149,26 +149,23 @@ def ensure_cloud_config_templates(
 
     config_dir = Path(config_dir)
     config_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    legacy = _read_assignments(config_dir / LEGACY_CREDENTIALS_FILENAME)
     created: list[str] = []
 
     config_path = config_dir / CONFIG_FILENAME
-    if _is_placeholder(legacy.get("supabase_url")):
-        if _write_new_file_exclusive(
-            config_path,
-            config_example.read_bytes(),
-            mode=0o644,
-        ):
-            created.append(str(config_path))
+    if _write_new_file_exclusive(
+        config_path,
+        config_example.read_bytes(),
+        mode=0o644,
+    ):
+        created.append(str(config_path))
 
     secret_path = config_dir / SECRET_FILENAME
-    if _is_placeholder(legacy.get("supabase_secret_key")):
-        if _write_new_file_exclusive(
-            secret_path,
-            secret_example.read_bytes(),
-            mode=0o600,
-        ):
-            created.append(str(secret_path))
+    if _write_new_file_exclusive(
+        secret_path,
+        secret_example.read_bytes(),
+        mode=0o600,
+    ):
+        created.append(str(secret_path))
 
     return created
 
@@ -225,13 +222,9 @@ def _unlink_best_effort(path: Path) -> None:
 def load_supabase_settings(config_dir: Path) -> SupabaseSettings:
     created = ensure_cloud_config_templates(config_dir)
     local = load_local_config(config_dir)
-    legacy = _read_assignments(config_dir / LEGACY_CREDENTIALS_FILENAME)
-    url = local.supabase_url or legacy.get("supabase_url")
-    # Only fall back to the legacy file when supabase.secret is absent.
+    url = local.supabase_url
     secret = _read_secret(config_dir)
-    if secret is None:
-        secret = legacy.get("supabase_secret_key")
-    publishable = local.supabase_publishable_key or legacy.get("supabase_publishable_key")
+    publishable = local.supabase_publishable_key
 
     if _usable_https_url(url) and _usable_secret(secret):
         assert url is not None and secret is not None
@@ -314,7 +307,7 @@ def _read_secret(config_dir: Path) -> str | None:
         secret = values.get("supabase_secret_key")
         if not secret:
             raise BackendSelectionError(
-                "Secret Key 文件存在但没有有效密钥，已停止，不会改用旧配置。",
+                "Secret Key 文件存在但没有有效密钥，已停止。",
                 code="CONFIG_MISSING",
             )
         return secret

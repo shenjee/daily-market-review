@@ -136,10 +136,10 @@ SQL、函数及授权保存为版本化迁移文件。云端建表、升级及�
 
 | 内容 | 本机路径 | 仓库模板 |
 | --- | --- | --- |
-| `backend`、`supabase_url`、`supabase_publishable_key` | `~/.marketreview/config` | `config/marketreview.config.example` |
+| `backend`、`supabase_url`、`supabase_publishable_key` | `~/.marketreview/supabase.config` | `config/supabase.config.example` |
 | Secret Key（单行，权限 600） | `~/.marketreview/supabase.secret` | `config/supabase.secret.example` |
 
-项目 URL 与 Publishable key（`sb_publishable_...`，旧名 anon）为普通配置，可写在 `config`。Secret Key（`sb_secret_...`，旧名 service_role）单独保存在 `supabase.secret`，不得写入 `config`。兼容旧布局：仅当 `supabase.secret` **不存在**时，可读 `~/.marketreview/supabase.config` 中的 `SUPABASE_SECRET_KEY`（及其中的 URL）；文件存在但为空、格式无效或键值为空时直接报 `CONFIG_MISSING`，不回退旧密钥。安装时仅在目标文件不存在时从模板创建，已有文件对照模板手工补字段，不得覆盖。可用 `MARKETREVIEW_CONFIG_DIR` 覆盖配置目录（测试用）；`MARKETREVIEW_HOME` 只控制本地库路径，不选择后端、也不改配置目录。填写步骤见 README「云端配置模板」与 `SKILL.md`「云端配置」。
+项目 URL 与 Publishable key（`sb_publishable_...`，旧名 anon）写在 `supabase.config`。Secret Key（`sb_secret_...`，旧名 service_role）单独保存在 `supabase.secret`，不得写入 `supabase.config`；写了就报 `CONFIG_MISSING`，不会用该密钥连接。安装时仅在目标文件不存在时从模板创建，已有文件对照模板手工补字段，不得覆盖。可用 `MARKETREVIEW_CONFIG_DIR` 覆盖配置目录（测试用）；`MARKETREVIEW_HOME` 只控制本地库路径，不选择后端、也不改配置目录。填写步骤见 README「云端配置模板」与 `SKILL.md`「云端配置」。
 
 - 新版本未配置 backend 时默认 Supabase；缺 URL、密钥或断网均报错。这是有意改变旧版本默认行为，升级说明和 SKILL.md 必须明确说明，不能把现存 SQLite 文件当作自动回退理由。`CLOUD_DEFAULT_ENABLED=True`。选择顺序仍是 `--backend`、配置文件 `backend`、代码默认值。配置里的 `sqlite` 会盖过代码默认值，所以两机配置都要写成 `supabase`。
 - 显式 `--backend sqlite` 可覆盖本机的 supabase 配置；SQLite 路径保留 `--db` > MARKETREVIEW_HOME > 默认路径的规则。`--db` 单独出现不能隐式选择 SQLite；最终有效后端仍为 supabase 时，与 `--db` 冲突，在打开库或请求网络前报错。
@@ -176,7 +176,7 @@ SQL、函数及授权保存为版本化迁移文件。云端建表、升级及�
 本节记录已完成阶段的验证要求，不作为第 7 项重新逐台验收的门槛。
 
 1. 在控制台确认 Project URL、实际地域及 Secret Key，记录地域名称和代码。若地域较远或实测往返延迟不可接受，在正式导入前新建目标地域项目并重新验证；不把“改地域”理解为已有项目原地切换。
-2. 仓库提供本地配置模板（`config/marketreview.config.example`、`config/supabase.secret.example`），由用户仅在本机目标文件不存在时复制到 `~/.marketreview/` 后自行填入 URL、Publishable 与 Secret；已有文件对照模板手工补字段，不得覆盖。填写说明见 README 与 SKILL.md。
+2. 仓库提供本地配置模板（`config/supabase.config.example`、`config/supabase.secret.example`），由用户仅在本机目标文件不存在时复制到 `~/.marketreview/` 后自行填入 URL、Publishable 与 Secret；已有文件对照模板手工补字段，不得覆盖。填写说明见 README 与 SKILL.md。
 3. 在当前 Mac 验证 Data API 鉴权、轻量读和临时写入的连通性，记录样本数、p50/p95/最大延迟、超时次数、网络环境和超时配置。
 4. 本地 PostgreSQL 测试函数、权限、批量事务与回滚；在线临时资源只验证实际网关鉴权、延迟、暂停/恢复表现及错误体，记录后清理。未遇到真实暂停时标记待验证，不伪造结论。Secret Key 不进入 CI。
 5. 在 M1 的实际 Agent 环境中验证同一项目；无法直接操作时，提供步骤并标记待验证。

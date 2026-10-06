@@ -223,7 +223,7 @@ class TestBackendSelection(unittest.TestCase):
 
     def test_marketreview_home_does_not_select_backend(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            config = Path(tmp) / "config"
+            config = Path(tmp) / "supabase.config"
             config.write_text("backend=sqlite\n", encoding="utf-8")
             db_path = Path(tmp) / "local.sqlite3"
             with patch.dict(os.environ, {"MARKETREVIEW_HOME": tmp, "MARKETREVIEW_CONFIG_DIR": tmp}):
@@ -251,12 +251,12 @@ class TestBackendSelection(unittest.TestCase):
             self.assertEqual(ctx.exception.code, "CONFIG_MISSING")
             self.assertFalse((Path(tmp) / "market_review.sqlite3").exists())
             # Templates are materialized so the user has files to edit.
-            self.assertTrue((Path(tmp) / "config").is_file())
+            self.assertTrue((Path(tmp) / "supabase.config").is_file())
             self.assertTrue((Path(tmp) / "supabase.secret").is_file())
             self.assertIn("已自动创建模板", str(ctx.exception))
             self.assertIn("请编辑", str(ctx.exception))
 
-    def test_ensure_templates_never_overwrite_and_skip_when_legacy_usable(self) -> None:
+    def test_ensure_templates_never_overwrite_existing_files(self) -> None:
         from marketreview.backend import ensure_cloud_config_templates
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -264,35 +264,37 @@ class TestBackendSelection(unittest.TestCase):
             home.mkdir()
             existing_config = "backend=sqlite\nsupabase_url=https://keep.example.co\n"
             existing_secret = "sb_secret_keep_me\n"
-            (home / "config").write_text(existing_config, encoding="utf-8")
+            (home / "supabase.config").write_text(existing_config, encoding="utf-8")
             (home / "supabase.secret").write_text(existing_secret, encoding="utf-8")
             created = ensure_cloud_config_templates(home)
             self.assertEqual(created, [])
-            self.assertEqual((home / "config").read_text(encoding="utf-8"), existing_config)
+            self.assertEqual((home / "supabase.config").read_text(encoding="utf-8"), existing_config)
             self.assertEqual((home / "supabase.secret").read_text(encoding="utf-8"), existing_secret)
 
         with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp) / "legacy-home"
+            home = Path(tmp) / "secret-in-config"
             home.mkdir()
-            (home / "supabase.config").write_text(
-                "SUPABASE_URL=https://legacy.example.co\n"
-                "SUPABASE_SECRET_KEY=sb_secret_legacy\n",
-                encoding="utf-8",
+            existing_config = (
+                "backend=supabase\n"
+                "supabase_url=https://keep.example.co\n"
+                "supabase_secret_key=sb_secret_do_not_use\n"
             )
+            (home / "supabase.config").write_text(existing_config, encoding="utf-8")
             created = ensure_cloud_config_templates(home)
-            self.assertEqual(created, [])
-            self.assertFalse((home / "config").exists())
-            self.assertFalse((home / "supabase.secret").exists())
-            settings = load_supabase_settings(home)
-            self.assertEqual(settings.url, "https://legacy.example.co")
-            self.assertEqual(settings.secret_key, "sb_secret_legacy")
+            self.assertEqual(created, [str(home / "supabase.secret")])
+            self.assertEqual((home / "supabase.config").read_text(encoding="utf-8"), existing_config)
+            with self.assertRaises(BackendSelectionError) as ctx:
+                load_supabase_settings(home)
+            self.assertEqual(ctx.exception.code, "CONFIG_MISSING")
+            self.assertNotIn("sb_secret_do_not_use", str(ctx.exception))
+            self.assertIn("不能包含 Secret Key", str(ctx.exception))
 
     def test_exclusive_create_skips_when_peer_wins_race(self) -> None:
         from marketreview.backend import _write_new_file_exclusive, ensure_cloud_config_templates
 
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
-            target = home / "config"
+            target = home / "supabase.config"
             winner = "backend=sqlite\nsupabase_url=https://peer.example.co\n"
             target.write_text(winner, encoding="utf-8")
             created = _write_new_file_exclusive(target, b"SHOULD_NOT_WRITE\n", mode=0o644)
@@ -336,28 +338,26 @@ class TestBackendSelection(unittest.TestCase):
             self.assertIn("权限", str(ctx.exception))
             self.assertFalse(target.exists())
 
-    def test_legacy_config_supplies_url_and_secret_without_logging_them(self) -> None:
+    def test_secret_in_supabase_config_is_rejected_and_not_logged(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             secret = "sb_secret_test_value"
             (Path(tmp) / "supabase.config").write_text(
-                f"SUPABASE_URL=https://example.supabase.co\nSUPABASE_SECRET_KEY={secret}\n",
+                f"supabase_url=https://example.supabase.co\nsupabase_secret_key={secret}\n",
                 encoding="utf-8",
             )
-            settings = load_supabase_settings(Path(tmp))
-            self.assertEqual(settings.url, "https://example.supabase.co")
-            self.assertEqual(settings.secret_key, secret)
-            self.assertIsNone(settings.publishable_key)
-            try:
-                raise RemoteStoreError(f"failed {secret}")
-            except RemoteStoreError as exc:
-                from marketreview.backend import redact_secret
+            (Path(tmp) / "supabase.secret").write_text("sb_secret_other\n", encoding="utf-8")
+            with self.assertRaises(BackendSelectionError) as ctx:
+                load_supabase_settings(Path(tmp))
+            self.assertEqual(ctx.exception.code, "CONFIG_MISSING")
+            self.assertNotIn(secret, str(ctx.exception))
+            from marketreview.backend import redact_secret
 
-                self.assertNotIn(secret, redact_secret(str(exc), secret))
+            self.assertNotIn(secret, redact_secret(f"failed {secret}", secret))
 
     def test_config_template_fields_load_url_secret_and_publishable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "config").write_text(
+            (root / "supabase.config").write_text(
                 "\n".join(
                     [
                         "backend=supabase",
@@ -374,23 +374,18 @@ class TestBackendSelection(unittest.TestCase):
             self.assertEqual(settings.secret_key, "sb_secret_test_value")
             self.assertEqual(settings.publishable_key, "sb_publishable_test")
 
-    def test_empty_secret_file_does_not_fall_back_to_legacy(self) -> None:
+    def test_empty_secret_file_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "config").write_text(
+            (root / "supabase.config").write_text(
                 "supabase_url=https://example.supabase.co\n",
                 encoding="utf-8",
             )
             (root / "supabase.secret").write_text("SUPABASE_SECRET_KEY=\n", encoding="utf-8")
-            (root / "supabase.config").write_text(
-                "SUPABASE_URL=https://example.supabase.co\n"
-                "SUPABASE_SECRET_KEY=sb_secret_legacy_value\n",
-                encoding="utf-8",
-            )
             with self.assertRaises(BackendSelectionError) as ctx:
                 load_supabase_settings(root)
             self.assertEqual(ctx.exception.code, "CONFIG_MISSING")
-            self.assertIn("不会改用旧配置", str(ctx.exception))
+            self.assertIn("没有有效密钥", str(ctx.exception))
 
     def test_install_commands_do_not_overwrite_existing_files(self) -> None:
         import subprocess
@@ -400,27 +395,27 @@ class TestBackendSelection(unittest.TestCase):
             home = Path(tmp) / "home"
             (skill / "config").mkdir(parents=True)
             home.mkdir()
-            example_config = (Path(__file__).resolve().parents[1] / "config" / "marketreview.config.example").read_text(
+            example_config = (Path(__file__).resolve().parents[1] / "config" / "supabase.config.example").read_text(
                 encoding="utf-8"
             )
             example_secret = (Path(__file__).resolve().parents[1] / "config" / "supabase.secret.example").read_text(
                 encoding="utf-8"
             )
-            (skill / "config" / "marketreview.config.example").write_text(example_config, encoding="utf-8")
+            (skill / "config" / "supabase.config.example").write_text(example_config, encoding="utf-8")
             (skill / "config" / "supabase.secret.example").write_text(example_secret, encoding="utf-8")
             existing_config = "backend=supabase\nsupabase_url=https://keep.example.co\n"
             existing_secret = "sb_secret_keep_me\n"
-            (home / "config").write_text(existing_config, encoding="utf-8")
+            (home / "supabase.config").write_text(existing_config, encoding="utf-8")
             (home / "supabase.secret").write_text(existing_secret, encoding="utf-8")
             script = f"""
 set -e
 mkdir -p "{home}"
-[ -e "{home}/config" ] || cp "{skill}/config/marketreview.config.example" "{home}/config"
+[ -e "{home}/supabase.config" ] || cp "{skill}/config/supabase.config.example" "{home}/supabase.config"
 [ -e "{home}/supabase.secret" ] || cp "{skill}/config/supabase.secret.example" "{home}/supabase.secret"
 chmod 600 "{home}/supabase.secret"
 """
             subprocess.run(["bash", "-c", script], check=True)
-            self.assertEqual((home / "config").read_text(encoding="utf-8"), existing_config)
+            self.assertEqual((home / "supabase.config").read_text(encoding="utf-8"), existing_config)
             self.assertEqual((home / "supabase.secret").read_text(encoding="utf-8"), existing_secret)
 
 

@@ -70,7 +70,7 @@
 
 ## 用户数据
 
-默认权威账本在 Supabase；明确选择 SQLite 时，以所选本地库为账本。Agent / 电脑通过各自配置中的 `supabase_url` 选择项目；指向同一项目才共享云端数据。默认配置位置为 `~/.marketreview/config`，`MARKETREVIEW_CONFIG_DIR` 可指定独立配置目录（其内仍需配置不同项目才能隔离云端数据）。Skill 安装目录只存放程序和内置资源，配置与 Secret 默认在 `~/.marketreview/`（也可由上述配置目录覆盖），升级或移除 Skill 不应删除用户配置与数据目录。
+默认权威账本在 Supabase；明确选择 SQLite 时，以所选本地库为账本。Agent / 电脑通过各自配置中的 `supabase_url` 选择项目；指向同一项目才共享云端数据。默认配置位置为 `~/.marketreview/supabase.config`，`MARKETREVIEW_CONFIG_DIR` 可指定独立配置目录（其内仍需配置不同项目才能隔离云端数据）。Skill 安装目录只存放程序和内置资源，配置与 Secret 默认在 `~/.marketreview/`（也可由上述配置目录覆盖），升级或移除 Skill 不应删除用户配置与数据目录。
 
 本地文件：
 
@@ -90,13 +90,13 @@ export MARKETREVIEW_HOME="/path/to/marketreview-data"
 
 ### 云端配置模板（默认模式必需）
 
-日常默认后端是 Supabase。未写 `backend` 时用代码默认值 `supabase`。`~/.marketreview/config` 里的 `backend` 优先于代码默认值，所以两机都要写成 `supabase`，不能只改代码开关。缺 URL 或 Secret、鉴权失败或断网会报错停止，不会自动打开 SQLite。`--backend sqlite` 选择本地库，读和写都会落到该文件；它不是只读开关。`--db` 不能代替这个选择。
+日常默认后端是 Supabase。未写 `backend` 时用代码默认值 `supabase`。`~/.marketreview/supabase.config` 里的 `backend` 优先于代码默认值，所以两机都要写成 `supabase`，不能只改代码开关。缺 URL 或 Secret、鉴权失败或断网会报错停止，不会自动打开 SQLite。`--backend sqlite` 选择本地库，读和写都会落到该文件；它不是只读开关。`--db` 不能代替这个选择。
 
 若本机尚无配置文件，CLI 在需要云端配置时会自动从 Skill 安装目录复制模板到 `~/.marketreview/`（已有文件不覆盖），并提示自行填写。也可手工复制。填好的文件只留在本机，不要提交 Git、打进发布包，或贴到对话 / 日志 / Issue。
 
 ```bash
 mkdir -p ~/.marketreview
-[ -e ~/.marketreview/config ] || cp "<skill-dir>/config/marketreview.config.example" ~/.marketreview/config
+[ -e ~/.marketreview/supabase.config ] || cp "<skill-dir>/config/supabase.config.example" ~/.marketreview/supabase.config
 [ -e ~/.marketreview/supabase.secret ] || cp "<skill-dir>/config/supabase.secret.example" ~/.marketreview/supabase.secret
 chmod 600 ~/.marketreview/supabase.secret
 ```
@@ -105,12 +105,12 @@ chmod 600 ~/.marketreview/supabase.secret
 
 | 项 | 本机位置 | 说明 |
 | --- | --- | --- |
-| 后端选择 | `~/.marketreview/config` 中 `backend` | 只能是 `sqlite` 或 `supabase`；日常写 `supabase`。省略时进程默认也是 `supabase` |
+| 后端选择 | `~/.marketreview/supabase.config` 中 `backend` | 只能是 `sqlite` 或 `supabase`；日常写 `supabase`。省略时进程默认也是 `supabase` |
 | 项目 URL | 同上 `supabase_url` | 控制台 Project URL，不含密钥 |
 | Publishable | 同上 `supabase_publishable_key` | `sb_publishable_...`（旧名 anon 亦可）；低权限，可写在 config |
 | Secret | `~/.marketreview/supabase.secret` | `sb_secret_...`（旧名 service_role 亦可）；高权限，单独文件、单行、权限 600 |
 
-日常写 RPC 使用 Secret。`backend=sqlite`（或显式 `--backend sqlite`）时不要求云端凭证。使用 `supabase` 时必须已填写 URL 与 Secret；缺配置、鉴权失败或断网会明确报错，**不会**回退本地 SQLite。兼容：仅当 `supabase.secret` **不存在**时，可读 `~/.marketreview/supabase.config` 里的 `SUPABASE_SECRET_KEY`；文件存在但内容无效时直接报错，不回退旧密钥。
+日常写 RPC 使用 Secret。`backend=sqlite`（或显式 `--backend sqlite`）时不要求云端凭证。使用 `supabase` 时必须已填写 URL 与 Secret；缺配置、鉴权失败或断网会明确报错，**不会**回退本地 SQLite。Secret 只放在 `supabase.secret`。`supabase.config` 里如果写了 Secret Key，命令会停止。
 
 ### 云端初始化
 
