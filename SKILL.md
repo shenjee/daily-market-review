@@ -3,7 +3,7 @@ name: daily-market-review
 description: "每日资本市场总体复盘。整理、补充、修正和查看指定交易日的涨跌停、市场宽度、连板、每日梯队、两融、指数、成交额、市值与估值数据。用户提到市场复盘、总体复盘、涨跌停名单、连板、每日梯队、两融，或要求从图片、链接、网站、截图或自然语言提取并保存时使用。"
 metadata:
   author: stock-pilot
-  version: 0.3.4
+  version: 0.4.0
   category: finance
   tags:
     - a-share
