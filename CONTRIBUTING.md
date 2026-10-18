@@ -59,7 +59,7 @@ GitHub Actions（`.github/workflows/tests.yml`）跑同一条命令。流水线�
 
 ## 发布包内容
 
-最终用户版本包命名为 `daily-market-review-vX.Y.Z.zip`，解压后根目录为 `daily-market-review/`，应只包含运行所需内容（当前版本 0.4.1）：
+最终用户版本包命名为 `daily-market-review-vX.Y.Z.zip`，解压后根目录为 `daily-market-review/`，应只包含运行所需内容（当前版本 0.4.2）：
 
 ```text
 daily-market-review/
